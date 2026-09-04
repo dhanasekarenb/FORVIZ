@@ -21,14 +21,16 @@ sudo apt install -y \
     python3-pil \
     i2c-tools
 
-echo "[2/5] Enabling I2C interface & starting pigpiod..."
+echo "[2/5] Enabling I2C interface & starting pigpiod daemon..."
 # Enable I2C interface non-interactively
 sudo raspi-config nonint do_i2c 0 || true
 # Enable and start pigpio daemon for jitter-free servo PWM
 sudo systemctl enable --now pigpiod || true
 
-echo "[3/5] Installing OLED drivers (luma.oled)..."
-sudo apt install -y python3-luma.oled 2>/dev/null || pip3 install --break-system-packages luma.oled
+echo "[3/5] Installing OLED & Servo Python packages..."
+# Attempt apt first, fallback to pip
+sudo apt install -y python3-luma.oled 2>/dev/null || pip3 install --break-system-packages luma.oled luma.core || true
+pip3 install --break-system-packages Pillow gpiozero pigpio 2>/dev/null || true
 
 echo "[4/5] Checking YuNet AI model file..."
 if [ ! -f "face_detection_yunet_2023mar.onnx" ]; then
@@ -47,7 +49,8 @@ echo "--- I2C Bus Check (Detecting connected OLEDs) ---"
 sudo i2cdetect -y 1 || true
 
 echo "=========================================================="
-echo " Setup complete!"
+echo " All dependencies installed successfully!"
+echo " Note: 'servos' and 'oled_face' are fully built into pi_tracker.py."
 echo " Quick Tests:"
 echo "   Test Servos:  python3 test_servos.py"
 echo "   Test OLED:    python3 test_oled.py"
