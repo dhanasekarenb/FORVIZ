@@ -1,4 +1,6 @@
 ﻿opencv-python>=4.8.0
-numpy>=1.22.0
-ultralytics>=8.0.0
-pillow>=9.0.0
+numpy>=1.24.0
+Pillow>=9.5.0
+luma.oled>=3.13.0
+gpiozero>=2.0
+pigpio>=1.78

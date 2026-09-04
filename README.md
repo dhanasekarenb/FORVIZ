@@ -1,20 +1,65 @@
-﻿# FORVIZ: 360° AI Face Tracking Robot
+﻿# FORVIZ: AI Face-Tracking Robot with Expressive Animated Eyes
 
-An ultra-lightweight, real-time 360° face-tracking system tailored for the **Raspberry Pi 4 Model B (2 GB)** and **Raspberry Pi Camera Rev 1.3 (OV5647)**.
+An ultra-lightweight, real-time face-tracking robot built for the **Raspberry Pi 4 Model B (2 GB)**, featuring a **Pan/Tilt 2-axis servo head** and **dual 0.96" SSD1306 I2C OLED screens** for expressive, dynamic robotic eyes.
 
-Designed for a stationary rotating robot/turret that smoothly turns to follow a person across a room without running heavy or unnecessary object detection pipelines.
+The robot stays stationary, tracks your face as you move around the room, locks onto you with cute animated happy eyes (`^ ^`), and scans the room when searching.
 
 ---
 
-## Architecture Overview
+## Hardware Bill of Materials (BOM)
 
-- **Embedded Hardware**: Raspberry Pi 4 Model B (2 GB RAM), 64-bit Raspberry Pi OS.
-- **Vision Sensor**: Raspberry Pi Camera Module Rev 1.3 (CSI Ribbon cable).
-- **Inference Engine**: OpenCV DNN with **YuNet Face Detector** (232 KB ONNX model).
-  - Uses only ~40–60 MB RAM total.
-  - Reaches **15–25 FPS** directly on the Pi 4 CPU cores (no TPU or extra accelerator needed).
-- **Kinematics**: Pure horizontal yaw angle calculation with proportional angular velocity (20% – 100% PWM).
-- **Target Lost Recovery**: Continuous 360° sweep scan until human face is re-acquired.
+| Component | Quantity | Role |
+| :--- | :--- | :--- |
+| **Raspberry Pi 4 Model B** (2 GB) | 1 | Main Controller & AI Inference |
+| **Raspberry Pi Camera Rev 1.3** | 1 | 5MP CSI Video Stream |
+| **SG90 9g Micro Servos** | 2 | Pan (Horizontal) & Tilt (Vertical) Gimbal |
+| **0.96" 128x64 SSD1306 I2C OLED** | 2 | Dual Animated Expressive Eyes |
+| **External 5V 2A-3A Power Supply / UBEC** | 1 (Recommended) | Power for servos (prevents Pi brownouts) |
+
+---
+
+## GPIO Pinout & Wiring Guide
+
+### 1. Servos (2x SG90)
+> [!IMPORTANT]
+> **Power Tip**: SG90 servos can draw peak currents up to 600mA each when moving. While testing without load can be done from the Pi's 5V pins, connecting servos to an **external 5V supply** (with Pi GND and external GND tied together) is strongly recommended for smooth, reboot-free operation.
+
+| Servo | Wire Color | Connects to Raspberry Pi Pin | Description |
+| :--- | :--- | :--- | :--- |
+| **Pan (Horizontal)** | Orange / Yellow (Signal) | **GPIO 18** (Physical Pin 12) | Hardware-timed PWM |
+| | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
+| | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
+| **Tilt (Vertical)** | Orange / Yellow (Signal) | **GPIO 13** (Physical Pin 33) | Hardware-timed PWM |
+| | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
+| | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
+
+---
+
+### 2. OLED Displays (2x 0.96" SSD1306)
+
+You can run **1 display** (dual eyes rendered side-by-side) or **2 displays** (one giant eye per screen).
+
+#### Option A: Zero-Soldering Dual I2C (Recommended!)
+Connect Display 1 to the default hardware I2C bus (`i2c-1`) and Display 2 to software I2C (`i2c-3`).
+
+- **Display 1 (Left Eye - Hardware I2C)**:
+  - `VCC` -> **3.3V** (Physical Pin 1)
+  - `GND` -> **GND** (Physical Pin 9)
+  - `SDA` -> **GPIO 2** (Physical Pin 3 - SDA1)
+  - `SCL` -> **GPIO 3** (Physical Pin 5 - SCL1)
+
+- **Display 2 (Right Eye - Software I2C)**:
+  - `VCC` -> **3.3V** (Physical Pin 17)
+  - `GND` -> **GND** (Physical Pin 25)
+  - `SDA` -> **GPIO 23** (Physical Pin 16)
+  - `SCL` -> **GPIO 24** (Physical Pin 18)
+
+*(To enable software I2C on GPIO 23/24, add `dtoverlay=i2c-gpio,bus=3,i2c_gpio_sda=23,i2c_gpio_scl=24` to `/boot/firmware/config.txt` and reboot).*
+
+#### Option B: Address Resistor Modification
+If you prefer sharing SDA & SCL on the same bus:
+- Leave Display 1 at address `0x3C`.
+- On Display 2, desolder the 0-ohm jumper resistor on the back and move it from `0x78` to `0x7A` (address becomes `0x3D`). Both screens can now share GPIO 2 (SDA) and GPIO 3 (SCL).
 
 ---
 
@@ -22,65 +67,64 @@ Designed for a stationary rotating robot/turret that smoothly turns to follow a 
 
 ```text
 FORVIZ/
-├── pi_tracker.py             # Optimized Raspberry Pi tracking script (Picamera2 + YuNet)
-├── setup_pi.sh               # 1-click dependency installer for Raspberry Pi OS
-├── test_vision.py            # PC test harness with simulated HUD and webcam support
-├── run_pc_test.bat           # 1-click Windows launcher for PC testing
-├── face_detection_yunet_*.onnx # (Auto-downloaded) 232 KB face detection weights
-├── .gitignore                # Excludes heavy weights, caches, and test artifacts
+├── pi_tracker.py             # Main robot coordinator (Camera + YuNet AI + Servos + OLED)
+├── servos.py                 # Pan/Tilt controller with smooth proportional tracking & auto-scan
+├── oled_face.py              # Procedural expressive eyes animation engine (async/threaded)
+├── test_servos.py            # Interactive servo calibration & angle testing tool
+├── test_oled.py              # OLED eyes preview & expression demo
+├── setup_pi.sh               # 1-click Raspberry Pi OS package installer
+├── test_vision.py            # PC test harness with simulated HUD
+├── face_detection_yunet_*.onnx # Ultra-lightweight (232 KB) YuNet model
+├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Quickstart
+## Step-by-Step Setup on Raspberry Pi
 
-### 1. Test on PC (Windows / Linux / macOS)
-To test the tracking logic and view the simulated robot HUD on your PC webcam:
-
+### Step 1: Install Dependencies
 ```bash
-python test_vision.py
-```
-*(On Windows, you can simply double-click `run_pc_test.bat`)*
-
-**Controls**:
-- `m`: Switch between Face Tracking (YuNet) and Object Detection (YOLO)
-- `c`: Toggle HUD overlay
-- `s`: Save snapshot image
-- `q` / `ESC`: Exit
-
----
-
-### 2. Deploy to Raspberry Pi 4
-
-#### A. Hardware Connection
-Connect your **Raspberry Pi Camera Rev 1.3** to the CSI port:
-- Silver contacts facing the micro-HDMI ports.
-- Blue backing facing the USB/Ethernet jacks.
-
-#### B. Setup on Pi
-Copy `pi_tracker.py` and `setup_pi.sh` to your Raspberry Pi, then run:
-
-```bash
+git pull   # or transfer updated files to your Pi
 chmod +x setup_pi.sh
 ./setup_pi.sh
 ```
 
-#### C. Run the Tracker
+### Step 2: Test & Calibrate Servos
+Mount your servo horns in the neutral 90° center position:
+```bash
+python3 test_servos.py
+```
+This centers both servos, tests range of motion (Pan 0°-180°, Tilt 50°-130°), and runs a 5-second simulated room sweep.
+
+### Step 3: Test OLED Expressions
+```bash
+# Single OLED test:
+python3 test_oled.py
+
+# Dual OLED test:
+python3 test_oled.py --dual
+```
+Cycles through neutral blinking, looking left/right/up, happy locked crescents (`^ ^`), and heart eyes (`<3 <3`).
+
+### Step 4: Run the Complete Autonomous Robot!
 ```bash
 python3 pi_tracker.py
 ```
 
-- **Connected to a screen**: Displays live video feed with bounding boxes, facial landmarks, and yaw error telemetry.
-- **Running over SSH (Headless)**: Automatically logs real-time tracking direction, power percentage, and yaw angle to your terminal.
+#### Optional Flags:
+- `--no-servo`: Runs vision and OLED without moving physical servos.
+- `--no-oled`: Runs vision and servos without OLED screens.
+- `--dual-oled`: Enables dual-screen eye rendering.
+- `--pan-pin 18 --tilt-pin 13`: Custom GPIO pins for servos.
 
 ---
 
-## Telemetry States
+## Eye Expressions & Behavior Matrix
 
-| State | Condition | Action |
+| Tracking State | Physical Servo Action | OLED Eyes Emotion |
 | :--- | :--- | :--- |
-| `LOCKED` | Face is within center deadband | 0% Power (Stand still, hold position) |
-| `ROTATE_CCW` | Face is to the left | Rotate Counter-Clockwise (proportional speed) |
-| `ROTATE_CW` | Face is to the right | Rotate Clockwise (proportional speed) |
-| `SCAN_360` | No face detected | Gentle 360° sweep rotation to locate human |
+| **`SCANNING`** | Smooth horizontal sweep search | Curious eyes looking left/right and blinking |
+| **`TRACKING`** | Moves Pan & Tilt to center target | Pupils dynamically gaze toward your face coordinates |
+| **`LOCKED`** | Holds position steadily | Cute happy arcs (`^ ^`) with pink blush lines |
+| **`FACE GONE`** | Pauses 1.5s then resumes sweep | Eyes open wide questioning before scanning |
