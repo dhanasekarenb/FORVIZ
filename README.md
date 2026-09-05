@@ -1,132 +1,142 @@
-﻿# FORVIZ: AI Face-Tracking Robot with Expressive Animated Eyes
+# FORVIZ — face-tracking robot
 
-An ultra-lightweight, real-time face-tracking robot built for the **Raspberry Pi 4 Model B (2 GB)**, featuring a **Pan/Tilt 2-axis servo head** and **dual 0.96" SSD1306 I2C OLED screens** for expressive, dynamic robotic eyes.
+FORVIZ is a stationary Raspberry Pi robot with a pan/tilt head, a camera, and one or two animated OLED displays. YuNet detects faces, the controller follows the largest face, and the eyes become happy after it stays centered for one second.
 
-The robot stays stationary, tracks your face as you move around the room, locks onto you with cute animated happy eyes (`^ ^`), and scans the room when searching.
+The V3 enclosure is a modular design intended for **PLA printing with a 0.4 mm nozzle**, using removable printed retainers and mechanically captive stock servo horns. No glue or added assembly screws are intended. **V3 is an engineering prototype; physical fit and loaded operation have not yet been tested.** Print the fit coupons and follow the mechanical guide before printing and assembling everything.
 
----
+- [V3 mechanical and printing guide](docs/MECHANICAL_V3.md)
+- [V3 printable STL files](3d_models/v3/stl)
+- [Interactive 3D preview](docs/robot_preview.html) — download/open locally; works offline
+- [Runtime, calibration, and troubleshooting](docs/RUNTIME.md)
 
-## Hardware Bill of Materials (BOM)
+![V3 engineering prototype: assembled and exploded printed components, physical fit not yet tested](docs/robot_v3.png)
 
-| Component | Quantity | Role |
-| :--- | :--- | :--- |
-| **Raspberry Pi 4 Model B** (2 GB) | 1 | Main Controller & AI Inference |
-| **Raspberry Pi Camera Rev 1.3** | 1 | 5MP CSI Video Stream |
-| **SG90 9g Micro Servos** | 2 | Pan (Horizontal) & Tilt (Vertical) Gimbal |
-| **0.96" 128x64 SSD1306 I2C OLED** | 2 | Dual Animated Expressive Eyes |
-| **External 5V 2A-3A Power Supply / UBEC** | 1 (Recommended) | Power for servos (prevents Pi brownouts) |
+## Hardware
 
----
+| Component | Quantity | Purpose |
+| --- | --- | --- |
+| Raspberry Pi 4 Model B | 1 | Camera capture and face detection |
+| Raspberry Pi Camera Rev 1.3 | 1 | CSI camera input |
+| SG90 positional micro servo, with stock horn | 2 | Pan and tilt |
+| 0.96-inch 128×64 SSD1306 I2C OLED | 2 for V3 | One eye per display; software also supports one display |
+| Regulated external 5 V servo supply | 1 | Servo power, with ground shared with the Pi |
+| Raspberry Pi power supply, wiring, and CSI ribbon | As needed | Controller power and interconnections |
 
-## GPIO Pinout & Wiring Guide
+Check your actual PCB, servo, and horn dimensions against the [mechanical guide](docs/MECHANICAL_V3.md). Modules sold under the same name can have different outlines. Use the specified stock horns in the printed captive mechanism; do not add horn-retaining screws or modify the servo internals.
 
-### 1. Servos (2x SG90)
-> [!IMPORTANT]
-> **Power Tip**: SG90 servos can draw peak currents up to 600mA each when moving. While testing without load can be done from the Pi's 5V pins, connecting servos to an **external 5V supply** (with Pi GND and external GND tied together) is strongly recommended for smooth, reboot-free operation.
+## Wiring
 
-| Servo | Wire Color | Connects to Raspberry Pi Pin | Description |
-| :--- | :--- | :--- | :--- |
-| **Pan (Horizontal)** | Orange / Yellow (Signal) | **GPIO 12** (Physical Pin 32) | Hardware-timed PWM |
-| | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
-| | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
-| **Tilt (Vertical)** | Orange / Yellow (Signal) | **GPIO 19** (Physical Pin 35) | Hardware-timed PWM |
-| | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
-| | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
+Disconnect power before changing wiring. Power the servos from the external regulated 5 V supply and the Pi from its own suitable supply. Join the external supply ground to Pi ground; do not join the two supplies' positive outputs. Wire colors vary, so check the component labels.
 
----
+| Connection | Destination |
+| --- | --- |
+| Pan servo signal | BCM GPIO 12, physical pin 32 |
+| Tilt servo signal | BCM GPIO 19, physical pin 35 |
+| Both servo positive leads | External regulated 5 V |
+| Both servo grounds | External supply ground and Pi GND, e.g. physical pin 34 |
+| Camera ribbon | Pi CSI camera connector |
 
-### 2. OLED Displays (2x 0.96" SSD1306)
+Use separate buses for two OLEDs with the same `0x3C` address:
 
-You can run **1 display** (dual eyes rendered side-by-side) or **2 displays** (one giant eye per screen).
+| OLED connection | Left display / bus 1 | Right display / bus 3 |
+| --- | --- | --- |
+| VCC | 3.3 V, physical pin 1 | 3.3 V, physical pin 17 |
+| GND | Physical pin 9 | Physical pin 25 |
+| SDA | BCM GPIO 2, physical pin 3 | BCM GPIO 23, physical pin 16 |
+| SCL | BCM GPIO 3, physical pin 5 | BCM GPIO 24, physical pin 18 |
 
-#### Option A: Zero-Soldering Dual I2C (Recommended!)
-Connect Display 1 to the default hardware I2C bus (`i2c-1`) and Display 2 to software I2C (`i2c-3`).
+The optional bus-3 setup below enables the second display. A display already configured for `0x3D` can instead share bus 1 with a `0x3C` display. The software probes supported addresses automatically.
 
-- **Display 1 (Left Eye - Hardware I2C)**:
-  - `VCC` -> **3.3V** (Physical Pin 1)
-  - `GND` -> **GND** (Physical Pin 9)
-  - `SDA` -> **GPIO 2** (Physical Pin 3 - SDA1)
-  - `SCL` -> **GPIO 3** (Physical Pin 5 - SCL1)
+## Set up the Raspberry Pi
 
-- **Display 2 (Right Eye - Software I2C)**:
-  - `VCC` -> **3.3V** (Physical Pin 17)
-  - `GND` -> **GND** (Physical Pin 25)
-  - `SDA` -> **GPIO 23** (Physical Pin 16)
-  - `SCL` -> **GPIO 24** (Physical Pin 18)
+Copy the complete project to the Pi and run these commands from its directory:
 
-*(To enable software I2C on GPIO 23/24, add `dtoverlay=i2c-gpio,bus=3,i2c_gpio_sda=23,i2c_gpio_scl=24` to `/boot/firmware/config.txt` and reboot).*
-
-#### Option B: Address Resistor Modification
-If you prefer sharing SDA & SCL on the same bus:
-- Leave Display 1 at address `0x3C`.
-- On Display 2, desolder the 0-ohm jumper resistor on the back and move it from `0x78` to `0x7A` (address becomes `0x3D`). Both screens can now share GPIO 2 (SDA) and GPIO 3 (SCL).
-
----
-
-## Project Structure
-
-```text
-FORVIZ/
-├── pi_tracker.py             # Main robot coordinator (Camera + YuNet AI + Servos + OLED)
-├── servos.py                 # Pan/Tilt controller with smooth proportional tracking & auto-scan
-├── oled_face.py              # Procedural expressive eyes animation engine (async/threaded)
-├── test_servos.py            # Interactive servo calibration & angle testing tool
-├── test_oled.py              # OLED eyes preview & expression demo
-├── setup_pi.sh               # 1-click Raspberry Pi OS package installer
-├── test_vision.py            # PC test harness with simulated HUD
-├── face_detection_yunet_*.onnx # Ultra-lightweight (232 KB) YuNet model
-├── requirements.txt
-└── README.md
+```bash
+bash setup_pi.sh
 ```
 
----
+The script installs system packages, enables I2C, attempts to start `pigpiod`, and downloads the YuNet model if it is missing. Check its output: some optional installation and service failures are reported without stopping the script. Keep `pi_tracker.py`, `servos.py`, and `oled_face.py` together. The main program imports the shared controllers.
 
-## Step-by-Step Setup on Raspberry Pi
+For the second OLED on GPIO 23/24:
 
-### Step 1: Install Dependencies
 ```bash
-git pull   # or transfer updated files to your Pi
-chmod +x setup_pi.sh
-./setup_pi.sh
+bash enable_dual_oled.sh
+python3 test_oled.py --scan
 ```
 
-### Step 2: Test & Calibrate Servos
-Mount your servo horns in the neutral 90° center position:
-```bash
-python3 test_servos.py
-```
-This centers both servos, tests range of motion (Pan 0°-180°, Tilt 50°-130°), and runs a 5-second simulated room sweep.
+Reboot if bus 3 is not available after enabling it. See [runtime setup troubleshooting](docs/RUNTIME.md#setup-and-dependencies) for dependency versions and `pigpiod` checks.
 
-### Step 3: Test OLED Expressions
-```bash
-# Single OLED test:
-python3 test_oled.py
+## Calibrate before tracking
 
-# Dual OLED test:
+1. **Simulate the servo sequence.** This runs without GPIO output or a camera:
+
+   ```bash
+   python3 test_servos.py --dry-run
+   ```
+
+2. **Center the unloaded servos before fitting the horns.** Support any attached head; this command holds both outputs at 90° until Ctrl+C:
+
+   ```bash
+   python3 test_servos.py --center-only
+   ```
+
+   Stop the command and disconnect servo power before fitting the stock horns and printed retainers. Preserve the neutral shaft orientation and follow the [V3 assembly guide](docs/MECHANICAL_V3.md). Stopping releases holding torque.
+
+3. **Run the camera and servos manually with a narrow first sweep.** Keep the robot attended and check the ribbon, wires, joint clearance, and direction of movement:
+
+   ```bash
+   python3 pi_tracker.py --no-oled --headless \
+     --pan-min 80 --pan-max 100 --tilt-min 80 --tilt-max 100 \
+     --servo-speed 12 --scan-speed 6
+   ```
+
+   This command moves the real servos. Stop with Ctrl+C and support the head before power is removed. Increase the permitted range gradually only after verifying clearance. Software angle limits do not establish mechanical clearance or prevent a wrongly assembled joint from binding.
+
+After the physical checks and OLED test, start normal operation:
+
+```bash
 python3 test_oled.py --dual
-```
-Cycles through neutral blinking, looking left/right/up, happy locked crescents (`^ ^`), and heart eyes (`<3 <3`).
-
-### Step 4: Run the Complete Autonomous Robot!
-```bash
 python3 pi_tracker.py
 ```
 
-#### Optional Flags:
-- `--no-servo`: Runs vision and OLED without moving physical servos.
-- `--no-oled`: Runs vision and servos without OLED screens.
-- `--dual-oled`: Enables dual-screen eye rendering.
-- `--pan-pin 12 --tilt-pin 19`: Custom GPIO pins for servos.
+Default limits are **pan 40–140°** and **tilt 65–115°**, with both centers at 90°. Motion is limited to 36°/s; pan scanning uses 18°/s. These are conservative software starting values, not measured guarantees for your assembled print.
 
----
+## Behavior
 
-## Eye Expressions & Behavior Matrix
+| State | Motion | Eyes |
+| --- | --- | --- |
+| `SCANNING` | Pan sweeps between configured limits; tilt eases toward its calibrated center | Neutral with scanning gaze |
+| `TRACKING` | Pan and tilt move toward the largest detected face | Neutral, gaze follows the face |
+| `LOCKED` | No movement inside the shared centering deadband | Happy after one continuous second centered |
+| `HOLDING` | Holds position during a brief missed detection, for up to 1.5 seconds | Neutral with previous gaze |
 
-| Tracking State | Physical Servo Action | OLED Eyes Emotion |
-| :--- | :--- | :--- |
-| **`SCANNING`** | Smooth horizontal sweep search | Curious eyes looking left/right and blinking |
-| **`TRACKING`** | Moves Pan & Tilt to center target | Pupils dynamically gaze toward your face coordinates |
-| **`LOCKED`** | Holds position steadily | Cute happy arcs (`^ ^`) with pink blush lines |
-| **`FACE GONE`** | Pauses 1.5s then resumes sweep | Eyes open wide questioning before scanning |
+The servos retain PWM while stationary by default so the head keeps holding torque. Optional `--idle-detach-after` releases that torque; it does not disconnect electrical power or guarantee a cool servo. Shutdown releases PWM without automatically moving the head back to center.
 
+This is face detection and tracking. The heart expression in the OLED demonstration is a manually selected animation, with no identity recognition attached to it.
 
+## Useful commands
+
+| Task | Command |
+| --- | --- |
+| Camera and simulated servo telemetry, no OLED output | `python3 pi_tracker.py --no-servo --no-oled` |
+| One detected OLED displaying both eyes | `python3 pi_tracker.py --single-oled` |
+| Force a desktop camera preview | `python3 pi_tracker.py --preview` |
+| Headless operation | `python3 pi_tracker.py --headless` |
+| All runtime options | `python3 pi_tracker.py --help` |
+| Hardware-free regression tests | `python3 -m unittest discover -s tests -v` |
+| Rebuild the offline 3D viewer and PNG after a geometry export | `python3 tools/build_robot_preview.py` |
+
+`--no-servo` disables physical servo output but continues calculating angles for telemetry. It still opens the camera. `--no-oled` only disables display output. The [runtime guide](docs/RUNTIME.md) describes all calibration flags, the PC vision demo, and validation limits.
+
+## Source layout
+
+| Path | Role |
+| --- | --- |
+| `pi_tracker.py` | Camera, YuNet detector, tracking state, CLI, and runtime cleanup |
+| `servos.py` | Shared pan/tilt controller with elapsed-time motion |
+| `oled_face.py` | Shared eye renderer and asynchronous OLED driver |
+| `test_servos.py`, `test_oled.py` | Manual hardware demonstrations |
+| `test_vision.py`, `run_pc_test.bat` | PC webcam vision demonstration |
+| `tests/test_runtime.py` | Automated regressions with simulated hardware |
+| `3d_models/v3/` | V3 source, exported assembly, and printable parts |
+| `docs/` | Mechanical guide, runtime guide, and generated preview |

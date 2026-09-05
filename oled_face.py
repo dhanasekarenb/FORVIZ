@@ -1,4 +1,4 @@
-﻿"""
+"""
 Animated Robot Eyes & Expressions Engine for SSD1306 128x64 OLED(s).
 ====================================================================
 Features:
@@ -10,7 +10,7 @@ Features:
   - Dynamic Gaze: Pupils physically follow the user's face position
 """
 import time
-import math
+
 import threading
 from PIL import Image, ImageDraw
 
@@ -105,121 +105,131 @@ class RobotEyesRenderer:
 
 
 class OLEDDisplayController:
-    """
-    Manages 1 or 2 SSD1306 OLED displays asynchronously with auto-detection.
-    """
-    def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C, port_2=None, addr_2=None):
-        self.renderer = RobotEyesRenderer(128, 64)
-        self.dev1 = None
-        self.dev2 = None
-        self.dual_screen = False
+    """Discover up to two SSD1306 displays and animate without blocking vision.
 
-        self.current_mood = "NEUTRAL"
-        self.gaze_x = 0.0
-        self.gaze_y = 0.0
+    dual_screen=False explicitly uses one screen. If only a secondary bus
+    responds, that screen becomes the primary. A failed display is disabled
+    while its surviving partner continues in single-screen mode.
+    """
+    def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C,
+                 port_2=None, addr_2=None, *, hardware=True):
+        if (port_2 is None) != (addr_2 is None):
+            raise ValueError('Specify both port_2 and addr_2, or neither')
+        self.renderer = RobotEyesRenderer(128, 64)
+        self.dev1 = self.dev2 = None
+        self.dual_screen = False
+        self.current_mood = 'NEUTRAL'
+        self.gaze_x = self.gaze_y = 0.0
         self.running = False
         self.thread = None
-
-        if not LUMA_AVAILABLE:
-            print("[OLED INFO] luma.oled not installed. Running without physical display.")
+        self._stop_event = threading.Event()
+        self._expression_lock = threading.Lock()
+        if not hardware or not LUMA_AVAILABLE:
+            print('[OLED] No physical display output.')
             return
 
-        # 1. Initialize Screen 1
-        try:
-            serial1 = i2c(port=port_1, address=addr_1)
-            self.dev1 = ssd1306(serial1)
-            print(f"[OLED] Screen 1 detected on I2C Bus {port_1} (Addr 0x{addr_1:X})")
-        except Exception as e:
-            print(f"[OLED WARNING] Screen 1 not detected on Bus {port_1} (Addr 0x{addr_1:X}): {e}")
-
-        # 2. Probe for Screen 2 (Auto-Detection)
-        candidates = []
-        if port_2 is not None and addr_2 is not None:
-            candidates.append((port_2, addr_2))
-        else:
-            # Check common multi-OLED configurations:
-            candidates = [
-                (1, 0x3D),  # Jumper modification on Bus 1
-                (3, 0x3C),  # Software I2C on Bus 3 (GPIO 23/24)
-                (3, 0x3D),  # Software I2C with modified address
-                (6, 0x3C),  # Hardware I2C 6 (GPIO 22/23)
-            ]
-
-        for p, a in candidates:
-            if p == port_1 and a == addr_1:
-                continue
+        candidates = [(port_1, addr_1)]
+        candidates += ([(port_2, addr_2)] if port_2 is not None else
+                       [(1, 0x3D), (3, 0x3C), (3, 0x3D), (6, 0x3C)])
+        devices = []
+        for port, address in dict.fromkeys(candidates):
+            serial = None
             try:
-                serial_candidate = i2c(port=p, address=a)
-                dev_candidate = ssd1306(serial_candidate)
-                self.dev2 = dev_candidate
-                self.dual_screen = True
-                print(f"[OLED] Screen 2 AUTO-DETECTED on I2C Bus {p} (Addr 0x{a:X})! Dual Eyes Active.")
-                break
+                serial = i2c(port=port, address=address)
+                device = ssd1306(serial)
             except Exception:
+                if serial is not None:
+                    try:
+                        serial.cleanup()
+                    except Exception:
+                        pass
                 continue
+            devices.append(device)
+            print(f'[OLED] Display detected on bus {port}, address 0x{address:X}')
+            if len(devices) >= (1 if dual_screen is False else 2):
+                break
+        if devices:
+            self.dev1 = devices[0]
+        if len(devices) == 2:
+            self.dev2 = devices[1]
+            self.dual_screen = True
+        if dual_screen is True and not self.dual_screen:
+            print('[OLED] Two screens requested; using the displays detected.')
 
-        if not self.dual_screen:
-            if dual_screen is True:
-                print("[OLED NOTE] Dual-screen requested, but 2nd OLED was not detected on (Bus 1, 0x3D) or (Bus 3, 0x3C).")
-                print("            Displaying dual eyes side-by-side on Screen 1.")
-            else:
-                print("[OLED INFO] 1 OLED display active. Dual eyes rendered side-by-side on Screen 1.")
-
-    def set_expression(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0):
-        self.current_mood = mood
-        self.gaze_x = max(-1.0, min(1.0, gaze_x))
-        self.gaze_y = max(-1.0, min(1.0, gaze_y))
+    def set_expression(self, mood='NEUTRAL', gaze_x=0.0, gaze_y=0.0):
+        with self._expression_lock:
+            self.current_mood = mood
+            self.gaze_x = max(-1.0, min(1.0, gaze_x))
+            self.gaze_y = max(-1.0, min(1.0, gaze_y))
 
     def start(self):
+        if self.thread is not None and self.thread.is_alive():
+            return
+        if self.dev1 is None:
+            return
+        self._stop_event.clear()
         self.running = True
-        self.thread = threading.Thread(target=self._animation_loop, daemon=True)
+        self.thread = threading.Thread(target=self._animation_loop, daemon=True, name='forviz-eyes')
         self.thread.start()
 
+    @staticmethod
+    def _cleanup_device(device):
+        if device is not None:
+            for method in ('clear', 'cleanup'):
+                try:
+                    getattr(device, method)()
+                except Exception:
+                    pass
+
+    def _display_frame(self, blink_pct):
+        with self._expression_lock:
+            expression = self.current_mood, self.gaze_x, self.gaze_y, blink_pct
+        devices = [device for device in (self.dev1, self.dev2) if device is not None]
+        frames = (self.renderer.render_dual_screen(*expression) if len(devices) == 2 else
+                  [self.renderer.render_single_screen(*expression)])
+        survivors = []
+        for device, frame in zip(devices, frames):
+            try:
+                device.display(frame)
+                survivors.append(device)
+            except Exception as exc:
+                print(f'[OLED WARNING] Display disconnected: {exc}')
+                self._cleanup_device(device)
+        self.dev1 = survivors[0] if survivors else None
+        self.dev2 = survivors[1] if len(survivors) == 2 else None
+        self.dual_screen = self.dev2 is not None
+
     def _animation_loop(self):
-        last_blink_time = time.time()
-        blink_interval = 3.5
-        blink_duration = 0.18
-
-        while self.running:
-            now = time.time()
-            elapsed_blink = now - last_blink_time
-
-            blink_pct = 0.0
-            if elapsed_blink > blink_interval:
-                t = (elapsed_blink - blink_interval) / blink_duration
-                if t <= 0.5:
-                    blink_pct = t * 2.0
-                elif t <= 1.0:
-                    blink_pct = (1.0 - t) * 2.0
-                else:
+        last_blink_time = time.monotonic()
+        blink_interval, blink_duration = 3.5, 0.18
+        try:
+            while not self._stop_event.is_set() and self.dev1 is not None:
+                now = time.monotonic()
+                phase = (now - last_blink_time - blink_interval) / blink_duration
+                blink_pct = max(0.0, 1.0 - abs(2.0 * phase - 1.0)) if 0 <= phase <= 1 else 0.0
+                if phase > 1:
                     last_blink_time = now
-                    blink_interval = 2.5 + (hash(str(now)) % 30) / 10.0
-
-            if self.dual_screen and self.dev1 and self.dev2:
-                img_l, img_r = self.renderer.render_dual_screen(
-                    self.current_mood, self.gaze_x, self.gaze_y, blink_pct
-                )
-                self.dev1.display(img_l)
-                self.dev2.display(img_r)
-            elif self.dev1:
-                img = self.renderer.render_single_screen(
-                    self.current_mood, self.gaze_x, self.gaze_y, blink_pct
-                )
-                self.dev1.display(img)
-
-            time.sleep(0.04)
+                self._display_frame(blink_pct)
+                self._stop_event.wait(0.04)
+        except Exception as exc:
+            print(f'[OLED WARNING] Animation stopped: {exc}')
+        finally:
+            self.running = False
+            self._cleanup_device(self.dev1)
+            self._cleanup_device(self.dev2)
+            self.dev1 = self.dev2 = None
+            self.dual_screen = False
 
     def stop(self):
-        self.running = False
+        self._stop_event.set()
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
-        if self.dev1:
-            try:
-                self.dev1.clear()
-            except Exception:
-                pass
-        if self.dev2:
-            try:
-                self.dev2.clear()
-            except Exception:
-                pass
+            if self.thread.is_alive():
+                # Avoid concurrent I2C access; the worker owns cleanup.
+                print('[OLED WARNING] Waiting for blocked I2C operation to finish.')
+                return
+        self.running = False
+        self._cleanup_device(self.dev1)
+        self._cleanup_device(self.dev2)
+        self.dev1 = self.dev2 = None
+        self.dual_screen = False

@@ -1,15 +1,16 @@
-﻿"""
+"""
 Interactive OLED Robot Eyes Test Script & I2C Bus Diagnostic Tool
 =================================================================
 Usage:
   python3 test_oled.py          # Auto-detects 1 or 2 screens and runs eye animations
   python3 test_oled.py --scan   # Scans all I2C ports and diagnoses display connections
-  python3 test_oled.py --dual   # Forces dual-screen mode
+  python3 test_oled.py --dual   # Requests two screens; falls back if unavailable
+  python3 test_oled.py --single # Renders both eyes on one detected screen
 """
-import sys
+__test__ = False  # Interactive hardware demo, excluded from pytest collection.
 import time
 import argparse
-from oled_face import OLEDDisplayController, RobotEyesRenderer
+from oled_face import OLEDDisplayController
 
 def scan_i2c():
     print("=" * 65)
@@ -33,15 +34,22 @@ def scan_i2c():
     ]
 
     for port, addr, desc in probes:
+        d = None
         try:
             s = i2c(port=port, address=addr)
             d = ssd1306(s)
             d.clear()
             print(f"  [SUCCESS] Found SSD1306 on Port {port}, Addr 0x{addr:X} -> {desc}")
             found.append((port, addr))
-        except Exception as e:
+        except Exception:
             # Not found or port doesn't exist
             pass
+        finally:
+            if d is not None:
+                try:
+                    d.cleanup()
+                except Exception:
+                    pass
 
     print("-" * 65)
     if len(found) == 0:
@@ -63,7 +71,7 @@ def scan_i2c():
             print(f"  - Screen on Port {p}, Addr 0x{a:X}")
     print("=" * 65)
 
-def test_on_hardware(dual_mode=None):
+def run_hardware_demo(dual_mode=None):
     print("=" * 65)
     print("        ROBOT OLED EYES EXPRESSION DEMO")
     print("=" * 65)
@@ -110,10 +118,12 @@ def test_on_hardware(dual_mode=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--scan", action="store_true", help="Diagnose connected I2C OLED screens")
-    parser.add_argument("--dual", action="store_true", help="Force dual OLED mode")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--dual", action="store_true", help="Request two OLED screens")
+    modes.add_argument("--single", action="store_true", help="Use one OLED screen")
     args = parser.parse_args()
 
     if args.scan:
         scan_i2c()
     else:
-        test_on_hardware(dual_mode=args.dual if args.dual else None)
+        run_hardware_demo(dual_mode=False if args.single else (True if args.dual else None))

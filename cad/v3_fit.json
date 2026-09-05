@@ -1,0 +1,19 @@
+{
+  "clearance": 0.35,
+  "oled_w": 27.5,
+  "oled_h": 27.5,
+  "oled_glass_w": 26.7,
+  "oled_glass_h": 19.3,
+  "oled_glass_depth": 2.3,
+  "oled_window_offset_z": 0.0,
+  "camera_w": 25.0,
+  "camera_h": 24.0,
+  "camera_aperture_d": 14.0,
+  "camera_lens_offset_x": 0.0,
+  "camera_lens_offset_z": 0.0,
+  "horn_l": 32.0,
+  "horn_w": 6.0,
+  "horn_t": 2.0,
+  "horn_hub_d": 8.0,
+  "horn_top_above_deck": 6.0
+}

@@ -33,3 +33,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Local CAD engine and verification caches
+.cad-deps/
+.pytest_cache/
+!docs/robot_v3.png

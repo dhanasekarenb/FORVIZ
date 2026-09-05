@@ -1,0 +1,813 @@
+{
+  "design": "FORVIZ V3 FIELD",
+  "units": "mm",
+  "material": "PLA",
+  "nozzle_mm": 0.4,
+  "generator_sha256": "406e13fdd9310be264e42d2167ca4e33e021c7310a6c5ea02072802aee599f1e",
+  "status": "Engineering prototype; physical fit and motion validation required",
+  "dimensions": {
+    "clearance": 0.35,
+    "wall": 2.4,
+    "base_w": 120.0,
+    "base_d": 106.0,
+    "deck_z": 56.0,
+    "head_w": 110.0,
+    "head_d": 46.0,
+    "head_h": 58.0,
+    "pivot_z": 117.0,
+    "oled_w": 27.5,
+    "oled_h": 27.5,
+    "oled_glass_w": 26.7,
+    "oled_glass_h": 19.3,
+    "oled_glass_depth": 2.3,
+    "pcb_t": 1.6,
+    "camera_w": 25.0,
+    "camera_h": 24.0,
+    "camera_aperture_d": 14.0,
+    "camera_lens_offset_x": 0.0,
+    "camera_lens_offset_z": 0.0,
+    "oled_window_offset_z": 0.0,
+    "servo_l": 23.2,
+    "servo_w": 12.6,
+    "servo_depth": 23.0,
+    "servo_ear_l": 32.5,
+    "servo_ear_t": 2.4,
+    "servo_axis_offset": 5.7,
+    "horn_l": 32.0,
+    "horn_w": 6.0,
+    "horn_t": 2.0,
+    "horn_hub_d": 8.0,
+    "horn_top_above_deck": 6.0,
+    "latch_t": 1.2,
+    "latch_deflection": 0.45,
+    "pan_limit": 50.0,
+    "tilt_limit": 25.0
+  },
+  "parts": [
+    {
+      "name": "01_base_shell",
+      "triangles": 2248,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 76280.66,
+      "bounds_mm": [
+        [
+          -60.0,
+          -53.0,
+          0.0
+        ],
+        [
+          60.0,
+          53.0,
+          56.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Floor down; supports only under upper rail roofs.",
+      "group": "fixed",
+      "stl_sha256": "8a0f875529cfcf86cd82b0ece63a416b1589cced1319767d003a377e4a17b2ad",
+      "print_size_mm": [
+        120.0,
+        106.0,
+        56.0
+      ],
+      "estimated_solid_mass_g": 94.6
+    },
+    {
+      "name": "02_electronics_drawer",
+      "triangles": 1852,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 26357.61,
+      "bounds_mm": [
+        [
+          -49.0,
+          -42.0,
+          3.5
+        ],
+        [
+          49.0,
+          51.2,
+          35.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Floor down. Drop Pi onto four seats; retain through its mounting holes with four printed pins.",
+      "group": "fixed",
+      "stl_sha256": "79c334d8c272f0b26a01b389b6eabdeb4400162af2418faa24ca0599bf3969d1",
+      "print_size_mm": [
+        98.0,
+        93.2,
+        31.5
+      ],
+      "estimated_solid_mass_g": 32.7
+    },
+    {
+      "name": "03_sliding_top_deck",
+      "triangles": 2106,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 38273.11,
+      "bounds_mm": [
+        [
+          -56.0,
+          -43.0,
+          49.5
+        ],
+        [
+          56.0,
+          43.0,
+          66.4
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Underside down; localized supports beneath bearing bridges and dovetail overhangs.",
+      "group": "fixed",
+      "stl_sha256": "c2740a1f88aa536624cd1e82ea0637ec99745ef55c0b6ba07cbf793b063e21aa",
+      "print_size_mm": [
+        112.0,
+        86.0,
+        16.9
+      ],
+      "estimated_solid_mass_g": 47.5
+    },
+    {
+      "name": "04_pan_servo_gate",
+      "triangles": 224,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 343.01,
+      "bounds_mm": [
+        [
+          -14.3,
+          -7.5,
+          56.1
+        ],
+        [
+          25.7,
+          7.5,
+          57.3
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Flat. Fit ear thickness first; trapped below the pan assembly.",
+      "group": "fixed",
+      "stl_sha256": "8511bbae59ebd0e183d1c0636ac0079d3a42d327af73c7b7aeacbf8387fd932c",
+      "print_size_mm": [
+        40.0,
+        15.0,
+        1.2
+      ],
+      "estimated_solid_mass_g": 0.4
+    },
+    {
+      "name": "05_pan_yoke",
+      "triangles": 1644,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 38641.89,
+      "bounds_mm": [
+        [
+          -64.0,
+          -24.0,
+          57.65
+        ],
+        [
+          64.0,
+          24.8,
+          126.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        90,
+        0
+      ],
+      "print_note": "Left outer cheek on bed; support journal and crossbar as needed, keep bearing/pocket supports clean.",
+      "group": "pan",
+      "stl_sha256": "d3011074e8c8111a9a62fb8dc85a49c539c6a964bbb68ed636f6537a7417df1f",
+      "print_size_mm": [
+        68.35,
+        48.8,
+        128.0
+      ],
+      "estimated_solid_mass_g": 47.9
+    },
+    {
+      "name": "06_pan_bearing_keeper",
+      "triangles": 490,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 8097.65,
+      "bounds_mm": [
+        [
+          -37.0,
+          -32.0,
+          61.65
+        ],
+        [
+          37.0,
+          33.0,
+          66.4
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Flat; no support in running bore. Slide from FRONT after seating yoke; keys enter from rear.",
+      "group": "fixed",
+      "stl_sha256": "346df4be958898af9f97b7c0a49ce3a9380d1b75a785b137c28365948fb4eef3",
+      "print_size_mm": [
+        74.0,
+        65.0,
+        4.75
+      ],
+      "estimated_solid_mass_g": 10.0
+    },
+    {
+      "name": "07_removable_tilt_tower",
+      "triangles": 814,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 20975.57,
+      "bounds_mm": [
+        [
+          30.4,
+          -18.0,
+          71.2
+        ],
+        [
+          94.0,
+          24.95,
+          131.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        90,
+        0
+      ],
+      "print_note": "Outer cheek down; selective supports in cradle. Install servo before sliding tower inward.",
+      "group": "pan",
+      "stl_sha256": "805f3ca475ec96a964635f5503b69b2f355f30854fe60331e12cc71997f7f407",
+      "print_size_mm": [
+        59.8,
+        42.95,
+        63.6
+      ],
+      "estimated_solid_mass_g": 26.0
+    },
+    {
+      "name": "08_tilt_servo_gate",
+      "triangles": 320,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 1165.79,
+      "bounds_mm": [
+        [
+          87.35,
+          -12.25,
+          109.35
+        ],
+        [
+          89.75,
+          23.65,
+          129.3
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        90,
+        0
+      ],
+      "print_note": "Flat on broad face. Remove gate before removing servo.",
+      "group": "pan",
+      "stl_sha256": "a6bce911420dde3e4350e7e96a3a35bae66e4659741df0cf53b65b818deb7f66",
+      "print_size_mm": [
+        19.95,
+        35.9,
+        2.4
+      ],
+      "estimated_solid_mass_g": 1.4
+    },
+    {
+      "name": "09_head_face_shell",
+      "triangles": 2644,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 51952.44,
+      "bounds_mm": [
+        [
+          -59.65,
+          -23.0,
+          88.0
+        ],
+        [
+          59.65,
+          18.2,
+          146.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        90,
+        0,
+        0
+      ],
+      "print_note": "Face on bed. Support side journal bosses and rail overhangs only; protect the eye windows.",
+      "group": "head",
+      "stl_sha256": "ea3be36c73c19c52025d94bc92abe09002c83af5c85cd9ca469b4d3b732042e2",
+      "print_size_mm": [
+        119.3,
+        58.0,
+        41.2
+      ],
+      "estimated_solid_mass_g": 64.4
+    },
+    {
+      "name": "10_sliding_rear_cowl",
+      "triangles": 592,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 19320.63,
+      "bounds_mm": [
+        [
+          -55.0,
+          11.8,
+          88.0
+        ],
+        [
+          55.0,
+          23.0,
+          146.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        -90,
+        0,
+        0
+      ],
+      "print_note": "Rear face down; support inside rail roofs, leave ventilation/cable openings clear.",
+      "group": "head",
+      "stl_sha256": "a4fa5a4c49e2577fe874f4bad810c01d8c72e4f669a93591717659041e7e5f0b",
+      "print_size_mm": [
+        110.0,
+        58.0,
+        11.2
+      ],
+      "estimated_solid_mass_g": 24.0
+    },
+    {
+      "name": "11_display_retaining_comb",
+      "triangles": 412,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 1604.8,
+      "bounds_mm": [
+        [
+          -45.9,
+          -17.85,
+          99.0
+        ],
+        [
+          45.9,
+          20.25,
+          132.75
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        90,
+        0,
+        0
+      ],
+      "print_note": "Broad comb plane down. Edge contacts only; verify PCB component clearance before fitting.",
+      "group": "head",
+      "stl_sha256": "bcedba47ed75aae3b8c4246720da7e0a802684d4597e574bb2d4d0ffe8c3f456",
+      "print_size_mm": [
+        91.8,
+        33.75,
+        38.1
+      ],
+      "estimated_solid_mass_g": 2.0
+    },
+    {
+      "name": "12_pull_release_key",
+      "triangles": 210,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 290.73,
+      "bounds_mm": [
+        [
+          -7.0,
+          -3.0,
+          0.0
+        ],
+        [
+          7.0,
+          23.0,
+          2.4
+        ]
+      ],
+      "quantity": 8,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Print flat, 100% infill, seam away from beam roots. Fit coupon first.",
+      "group": "hardware",
+      "stl_sha256": "7582a4a866a62bfe33153320844505809a4e341c9c0b8161d68e0946bc2ed949",
+      "print_size_mm": [
+        14.0,
+        26.0,
+        2.4
+      ],
+      "estimated_solid_mass_g": 0.4
+    },
+    {
+      "name": "13_pcb_snap_pin",
+      "triangles": 472,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 52.23,
+      "bounds_mm": [
+        [
+          -2.5,
+          -2.5,
+          0.0
+        ],
+        [
+          2.5,
+          2.5,
+          9.4
+        ]
+      ],
+      "quantity": 4,
+      "print_rotation_degrees": [
+        90,
+        0,
+        0
+      ],
+      "print_note": "Print on side with brim; clean support from shaft. Test pin and seat coupon before board installation.",
+      "group": "hardware",
+      "stl_sha256": "ab60e17bf0cd71d8d8d8df9988d31cc7593a415d27a01be6c55ccc24fbb8456f",
+      "print_size_mm": [
+        5.0,
+        9.4,
+        5.0
+      ],
+      "estimated_solid_mass_g": 0.1
+    },
+    {
+      "name": "fit_01_key_receivers",
+      "triangles": 504,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 11763.42,
+      "bounds_mm": [
+        [
+          -34.0,
+          -22.0,
+          0.0
+        ],
+        [
+          34.0,
+          22.0,
+          9.3
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "1/2/3 dimples = 0.20/0.35/0.50 mm per side.",
+      "group": "coupon",
+      "stl_sha256": "76b1cb5e627c791becf5ae05f7204f78383deb2a05623047b51eaa25eb812470",
+      "print_size_mm": [
+        68.0,
+        44.0,
+        9.3
+      ],
+      "estimated_solid_mass_g": 14.6
+    },
+    {
+      "name": "fit_02_key",
+      "triangles": 210,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 290.73,
+      "bounds_mm": [
+        [
+          -7.0,
+          -3.0,
+          0.0
+        ],
+        [
+          7.0,
+          23.0,
+          2.4
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "",
+      "group": "coupon",
+      "stl_sha256": "7582a4a866a62bfe33153320844505809a4e341c9c0b8161d68e0946bc2ed949",
+      "print_size_mm": [
+        14.0,
+        26.0,
+        2.4
+      ],
+      "estimated_solid_mass_g": 0.4
+    },
+    {
+      "name": "fit_03_stock_horn_pocket",
+      "triangles": 432,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 9642.83,
+      "bounds_mm": [
+        [
+          -23.0,
+          -23.0,
+          0.0
+        ],
+        [
+          23.0,
+          23.0,
+          5.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "",
+      "group": "coupon",
+      "stl_sha256": "057a21264117529cb90134419cdaccf174724c1789cf46fcc71e893b4ccbf9c4",
+      "print_size_mm": [
+        46.0,
+        46.0,
+        5.0
+      ],
+      "estimated_solid_mass_g": 12.0
+    },
+    {
+      "name": "fit_04_journal_ring",
+      "triangles": 384,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 751.55,
+      "bounds_mm": [
+        [
+          -19.0,
+          -19.0,
+          0.0
+        ],
+        [
+          19.0,
+          19.0,
+          4.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "",
+      "group": "coupon",
+      "stl_sha256": "82dca92833744bddbb8b18515df400c63fb9ddc8cfce8c736b24182998d6b3e9",
+      "print_size_mm": [
+        38.0,
+        38.0,
+        4.0
+      ],
+      "estimated_solid_mass_g": 0.9
+    },
+    {
+      "name": "fit_05_journal_plug",
+      "triangles": 380,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 4222.78,
+      "bounds_mm": [
+        [
+          -17.0,
+          -17.0,
+          0.0
+        ],
+        [
+          17.0,
+          17.0,
+          7.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "",
+      "group": "coupon",
+      "stl_sha256": "f894ed1b6f9462c20b042f52f87a658896e2e513c76cf8ae4c14866998a7f8a5",
+      "print_size_mm": [
+        34.0,
+        34.0,
+        7.0
+      ],
+      "estimated_solid_mass_g": 5.2
+    },
+    {
+      "name": "fit_06_servo_body_gauge",
+      "triangles": 224,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 1903.96,
+      "bounds_mm": [
+        [
+          -20.0,
+          -12.0,
+          0.0
+        ],
+        [
+          20.0,
+          12.0,
+          3.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "",
+      "group": "coupon",
+      "stl_sha256": "4784a906cb17f1a30882210b0f05c094f27074e6c4ca77799cf709c7868934f5",
+      "print_size_mm": [
+        40.0,
+        24.0,
+        3.0
+      ],
+      "estimated_solid_mass_g": 2.4
+    },
+    {
+      "name": "fit_07_pcb_pin_seat",
+      "triangles": 240,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 1555.74,
+      "bounds_mm": [
+        [
+          -10.0,
+          -8.0,
+          0.0
+        ],
+        [
+          10.0,
+          8.0,
+          5.0
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "Stack fit08 above this seat for6.6mm capture stack.",
+      "group": "coupon",
+      "stl_sha256": "8311d72183a257d1da993a465736c99831ae28640a26b14f650835b06879284c",
+      "print_size_mm": [
+        20.0,
+        16.0,
+        5.0
+      ],
+      "estimated_solid_mass_g": 1.9
+    },
+    {
+      "name": "fit_08_dummy_pcb",
+      "triangles": 240,
+      "watertight": true,
+      "winding_consistent": true,
+      "positive_volume": true,
+      "connected_components": 1,
+      "volume_mm3": 296.67,
+      "bounds_mm": [
+        [
+          -8.0,
+          -6.0,
+          0.0
+        ],
+        [
+          8.0,
+          6.0,
+          1.6
+        ]
+      ],
+      "quantity": 1,
+      "print_rotation_degrees": [
+        0,
+        0,
+        0
+      ],
+      "print_note": "",
+      "group": "coupon",
+      "stl_sha256": "e7f4a13b4899d3ffcf27318a114ed8bc2907d493f054af68043ede1a5bb0f9da",
+      "print_size_mm": [
+        16.0,
+        12.0,
+        1.6
+      ],
+      "estimated_solid_mass_g": 0.4
+    }
+  ],
+  "mesh_failures": [],
+  "assembly_overlaps": [],
+  "motion_checks": {
+    "states_checked": 100,
+    "failures": [],
+    "scope": "Discrete rigid printed-part poses and insertion samples; excludes flexible wires and real-component variation."
+  },
+  "nominal_hardware_overlaps": [],
+  "assumed_snap_beam_strain": 0.00202
+}

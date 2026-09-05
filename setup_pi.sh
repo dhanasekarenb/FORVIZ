@@ -1,7 +1,8 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Automated Setup Script for Raspberry Pi 4 (2GB) 64-bit OS
 # Installs Camera, OpenCV, YuNet AI, SG90 Servo drivers, and SSD1306 OLED drivers.
 set -e
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 echo "=========================================================="
 echo " Setting up AI Face Tracker Robot (Camera + Servos + OLED)"
@@ -50,7 +51,7 @@ sudo i2cdetect -y 1 || true
 
 echo "=========================================================="
 echo " All dependencies installed successfully!"
-echo " Note: 'servos' and 'oled_face' are fully built into pi_tracker.py."
+echo " Keep servos.py and oled_face.py alongside pi_tracker.py."
 echo " Quick Tests:"
 echo "   Test Servos:  python3 test_servos.py"
 echo "   Test OLED:    python3 test_oled.py"

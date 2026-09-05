@@ -1,62 +1,27 @@
-﻿"""
-Raspberry Pi 4 AI Face Tracker with Dual SG90 Servos & SSD1306 OLED Expressive Eyes
-===================================================================================
-All-In-One Self-Contained Script (Anti-Overheat, Jitter-Free & Auto-Dual-OLED Edition).
-Pinout:
-  - Pan Servo (Yaw):   GPIO 12 (Physical Pin 32) -> PWM0
-  - Tilt Servo (Pitch): GPIO 19 (Physical Pin 35) -> PWM1
-  - Ground (GND):      Physical Pin 34 (Between Pins 32 and 35)
-  - 5V (Power):        Physical Pin 2 or 4 (or external 5V)
-  - OLED Screen 1:     SDA = GPIO 2 (Pin 3), SCL = GPIO 3 (Pin 5), 3.3V, GND
-  - OLED Screen 2:     SDA = GPIO 23 (Pin 16), SCL = GPIO 24 (Pin 18) [or Bus 1 Addr 0x3D]
+"""FORVIZ face tracker using shared servo and OLED controllers.
+
+Pan GPIO 12, tilt GPIO 19; OLED bus 1 and optional software bus 3.
+Use --help for hardware-disable, display and mechanical calibration options.
 """
+import argparse
+import math
+import os
+from pathlib import Path
+import sys
+import time
 
 import cv2
-import time
-import numpy as np
-import os
-import sys
-import math
-import argparse
-import threading
-from PIL import Image, ImageDraw
+from servos import PanTiltTracker
+from oled_face import OLEDDisplayController, RobotEyesRenderer
 
-# Model file path
-YUNET_MODEL_PATH = "face_detection_yunet_2023mar.onnx"
+YUNET_MODEL_PATH = str(Path(__file__).resolve().with_name('face_detection_yunet_2023mar.onnx'))
 
-# ---------------------------------------------------------------------------
-# 1. OPTIONAL HARDWARE DRIVER IMPORTS (GRACEFUL FALLBACKS)
-# ---------------------------------------------------------------------------
 try:
     from picamera2 import Picamera2
     PICAM2_AVAILABLE = True
 except ImportError:
     PICAM2_AVAILABLE = False
 
-try:
-    import pigpio
-    PIGPIO_AVAILABLE = True
-except ImportError:
-    PIGPIO_AVAILABLE = False
-
-try:
-    from gpiozero import AngularServo
-    from gpiozero.pins.pigpio import PiGPIOFactory
-    GPIOZERO_AVAILABLE = True
-except ImportError:
-    GPIOZERO_AVAILABLE = False
-
-try:
-    from luma.core.interface.serial import i2c
-    from luma.oled.device import ssd1306
-    LUMA_AVAILABLE = True
-except ImportError:
-    LUMA_AVAILABLE = False
-
-
-# ---------------------------------------------------------------------------
-# 2. CAMERA STREAM (PICAMERA2 / OPENCV)
-# ---------------------------------------------------------------------------
 class PiCameraStream:
     """Handles camera capture using Picamera2 or OpenCV fallback."""
     def __init__(self, width=640, height=480, fps=30):
@@ -78,6 +43,9 @@ class PiCameraStream:
                 print("[CAM] Picamera2 started successfully.")
             except Exception as e:
                 print(f"[CAM WARNING] Picamera2 failed ({e}). Falling back to cv2.VideoCapture...")
+                if self.picam2 is not None:
+                    self.picam2.close()
+                    self.picam2 = None
                 self.use_picam2 = False
 
         if not self.use_picam2:
@@ -85,21 +53,26 @@ class PiCameraStream:
             self.cap = cv2.VideoCapture(0)
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            self.cap.set(cv2.CAP_PROP_FPS, fps)
             if not self.cap.isOpened():
+                self.cap.release()
                 raise RuntimeError("Failed to open camera! Check CSI ribbon cable or run 'rpicam-hello'.")
 
     def read(self):
         if self.use_picam2:
-            frame_rgb = self.picam2.capture_array()
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-            return True, frame_bgr
+            # Picamera2 RGB888 arrays are BGR byte order, as OpenCV expects.
+            # https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf
+            return True, self.picam2.capture_array()
         else:
             ret, frame = self.cap.read()
             return ret, frame
 
     def release(self):
         if self.use_picam2 and self.picam2 is not None:
-            self.picam2.stop()
+            try:
+                self.picam2.stop()
+            finally:
+                self.picam2.close()
         elif self.cap is not None:
             self.cap.release()
 
@@ -114,7 +87,7 @@ class FaceDetectorYuNet:
             raise FileNotFoundError(f"Model file '{model_path}' not found! Run setup_pi.sh to download it.")
 
         self.detector = cv2.FaceDetectorYN.create(
-            model=model_path,
+            model=str(model_path),
             config="",
             input_size=(320, 320),
             score_threshold=conf_threshold,
@@ -145,391 +118,6 @@ class FaceDetectorYuNet:
         return results, latency_ms
 
 
-# ---------------------------------------------------------------------------
-# 4. ANTI-OVERHEAT, JITTER-FREE SERVO CONTROLLER (PAN=12, TILT=19)
-# ---------------------------------------------------------------------------
-class PanTiltTracker:
-    """
-    Smooth, anti-overheat servo controller.
-    Default: Pan = GPIO 12 (Pin 32), Tilt = GPIO 19 (Pin 35)
-    """
-    def __init__(self, pan_pin=12, tilt_pin=19,
-                 pan_range=(20, 160), tilt_range=(45, 135),
-                 pan_center=90, tilt_center=90,
-                 max_speed_deg=1.6, idle_timeout_sec=0.6):
-        self.pan_pin = pan_pin
-        self.tilt_pin = tilt_pin
-        self.pan_min, self.pan_max = pan_range
-        self.tilt_min, self.tilt_max = tilt_range
-        self.max_speed_deg = max_speed_deg
-        self.idle_timeout_sec = idle_timeout_sec
-
-        self.current_pan = float(pan_center)
-        self.current_tilt = float(tilt_center)
-        self.target_pan = float(pan_center)
-        self.target_tilt = float(tilt_center)
-
-        # Safe pulse width bounds for SG90 (prevents mechanical gear stall)
-        self.min_us = 600
-        self.max_us = 2300
-
-        self.last_move_time = time.time()
-        self.is_sleeping = False
-        self.backend = "DUMMY"
-        self.pi = None
-        self.pan_servo = None
-        self.tilt_servo = None
-
-        self.scan_direction = 1
-        self.scan_speed = 0.8
-
-        # 1. Native pigpio Hardware DMA (Primary, zero jitter)
-        if PIGPIO_AVAILABLE:
-            try:
-                self.pi = pigpio.pi()
-                if self.pi.connected:
-                    self.backend = "PIGPIO"
-                    print(f"[SERVOS] Connected to pigpio (Hardware DMA PWM active).")
-                    print(f"         Pan:  GPIO {pan_pin} (Pin 32)")
-                    print(f"         Tilt: GPIO {tilt_pin} (Pin 35)")
-                else:
-                    self.pi = None
-            except Exception:
-                self.pi = None
-
-        # 2. Fallback gpiozero
-        if self.backend == "DUMMY" and GPIOZERO_AVAILABLE:
-            try:
-                factory = None
-                try:
-                    factory = PiGPIOFactory()
-                except Exception:
-                    pass
-
-                self.pan_servo = AngularServo(
-                    self.pan_pin, min_angle=0, max_angle=180,
-                    min_pulse_width=0.0006, max_pulse_width=0.0023,
-                    pin_factory=factory
-                )
-                self.tilt_servo = AngularServo(
-                    self.tilt_pin, min_angle=0, max_angle=180,
-                    min_pulse_width=0.0006, max_pulse_width=0.0023,
-                    pin_factory=factory
-                )
-                self.backend = "GPIOZERO"
-                print(f"[SERVOS] Initialized via gpiozero (Pan: GPIO {pan_pin}, Tilt: GPIO {tilt_pin})")
-            except Exception as e:
-                print(f"[SERVOS WARNING] gpiozero init failed ({e}).")
-
-        if self.backend == "DUMMY":
-            print("[SERVOS INFO] No physical GPIO driver available. Running in dummy simulation.")
-
-        self._write_angles(self.current_pan, self.current_tilt)
-
-    def angle_to_us(self, angle_deg):
-        clamped = max(0.0, min(180.0, angle_deg))
-        return int(self.min_us + (clamped / 180.0) * (self.max_us - self.min_us))
-
-    def _write_angles(self, pan_deg, tilt_deg):
-        self.is_sleeping = False
-        self.last_move_time = time.time()
-
-        if self.backend == "PIGPIO" and self.pi is not None:
-            pan_us = self.angle_to_us(pan_deg)
-            tilt_us = self.angle_to_us(tilt_deg)
-            self.pi.set_servo_pulsewidth(self.pan_pin, pan_us)
-            self.pi.set_servo_pulsewidth(self.tilt_pin, tilt_us)
-
-        elif self.backend == "GPIOZERO" and self.pan_servo is not None:
-            try:
-                self.pan_servo.angle = pan_deg
-                self.tilt_servo.angle = tilt_deg
-            except Exception:
-                pass
-
-    def sleep_idle(self):
-        """ANTI-OVERHEAT: Detach PWM signal when stationary so motors stay cool."""
-        if self.is_sleeping:
-            return
-        if (time.time() - self.last_move_time) > self.idle_timeout_sec:
-            if self.backend == "PIGPIO" and self.pi is not None:
-                self.pi.set_servo_pulsewidth(self.pan_pin, 0)
-                self.pi.set_servo_pulsewidth(self.tilt_pin, 0)
-            elif self.backend == "GPIOZERO" and self.pan_servo is not None:
-                try:
-                    self.pan_servo.detach()
-                    self.tilt_servo.detach()
-                except Exception:
-                    pass
-            self.is_sleeping = True
-
-    def track_face(self, target_cx, target_cy, frame_w=640, frame_h=480, deadband=0.08):
-        norm_dx = (target_cx - (frame_w / 2.0)) / (frame_w / 2.0)
-        norm_dy = (target_cy - (frame_h / 2.0)) / (frame_h / 2.0)
-
-        # Center deadband to stop twitching
-        if abs(norm_dx) < deadband and abs(norm_dy) < deadband:
-            self.sleep_idle()
-            return self.current_pan, self.current_tilt
-
-        step_pan = -norm_dx * 2.5
-        step_tilt = norm_dy * 2.0
-
-        self.target_pan = max(self.pan_min, min(self.pan_max, self.current_pan + step_pan))
-        self.target_tilt = max(self.tilt_min, min(self.tilt_max, self.current_tilt + step_tilt))
-
-        # Slew-rate limiter prevents erratic violent jumps
-        delta_p = self.target_pan - self.current_pan
-        delta_t = self.target_tilt - self.current_tilt
-
-        delta_p = max(-self.max_speed_deg, min(self.max_speed_deg, delta_p))
-        delta_t = max(-self.max_speed_deg, min(self.max_speed_deg, delta_t))
-
-        if abs(delta_p) > 0.25 or abs(delta_t) > 0.25:
-            self.current_pan += delta_p
-            self.current_tilt += delta_t
-            self._write_angles(self.current_pan, self.current_tilt)
-        else:
-            self.sleep_idle()
-
-        return self.current_pan, self.current_tilt
-
-    def step_scan(self):
-        delta = self.scan_direction * self.scan_speed
-        self.current_pan += delta
-
-        if self.current_pan >= self.pan_max:
-            self.current_pan = self.pan_max
-            self.scan_direction = -1
-        elif self.current_pan <= self.pan_min:
-            self.current_pan = self.pan_min
-            self.scan_direction = 1
-
-        self.current_tilt = 85.0
-        self._write_angles(self.current_pan, self.current_tilt)
-        return self.current_pan, self.current_tilt
-
-    def set_direct(self, pan_deg, tilt_deg):
-        self.current_pan = max(self.pan_min, min(self.pan_max, pan_deg))
-        self.current_tilt = max(self.tilt_min, min(self.tilt_max, tilt_deg))
-        self._write_angles(self.current_pan, self.current_tilt)
-
-    def center(self):
-        self.set_direct(90, 90)
-
-    def close(self):
-        if self.backend == "PIGPIO" and self.pi is not None:
-            self.pi.set_servo_pulsewidth(self.pan_pin, 0)
-            self.pi.set_servo_pulsewidth(self.tilt_pin, 0)
-            self.pi.stop()
-        elif self.backend == "GPIOZERO":
-            if self.pan_servo:
-                self.pan_servo.close()
-            if self.tilt_servo:
-                self.tilt_servo.close()
-
-
-# ---------------------------------------------------------------------------
-# 5. OLED DISPLAY ANIMATED EYES (AUTO-DETECT 1 OR 2 SCREENS)
-# ---------------------------------------------------------------------------
-class RobotEyesRenderer:
-    def __init__(self, width=128, height=64):
-        self.w = width
-        self.h = height
-
-    def render_single_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
-        image = Image.new("1", (self.w, self.h), 0)
-        draw = ImageDraw.Draw(image)
-        eye_w, eye_h = 32, 42
-        eye_spacing = 18
-        cy = self.h // 2
-        left_cx = (self.w // 2) - (eye_spacing // 2) - (eye_w // 2)
-        right_cx = (self.w // 2) + (eye_spacing // 2) + (eye_w // 2)
-
-        self._draw_eye(draw, left_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
-        self._draw_eye(draw, right_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=False)
-        return image
-
-    def render_dual_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
-        img_left = Image.new("1", (self.w, self.h), 0)
-        img_right = Image.new("1", (self.w, self.h), 0)
-        draw_l = ImageDraw.Draw(img_left)
-        draw_r = ImageDraw.Draw(img_right)
-        eye_w, eye_h = 64, 50
-        cx, cy = self.w // 2, self.h // 2
-
-        self._draw_eye(draw_l, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
-        self._draw_eye(draw_r, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=False)
-        return img_left, img_right
-
-    def _draw_eye(self, draw, cx, cy, w, h, mood, gaze_x, gaze_y, blink_pct, is_left):
-        if mood == "HAPPY":
-            line_w = 4 if w > 40 else 3
-            bbox = [cx - w // 2, cy - h // 3, cx + w // 2, cy + h // 3]
-            draw.arc(bbox, start=190, end=350, fill=1, width=line_w)
-            blush_x = cx - 10 if is_left else cx + 2
-            draw.line([blush_x, cy + h // 3 + 4, blush_x + 8, cy + h // 3 + 4], fill=1, width=2)
-            return
-
-        if mood == "HEART":
-            r = w // 4
-            draw.ellipse([cx - r, cy - r, cx, cy], fill=1)
-            draw.ellipse([cx, cy - r, cx + r, cy], fill=1)
-            poly = [(cx - r, cy - r // 3), (cx + r, cy - r // 3), (cx, cy + r)]
-            draw.polygon(poly, fill=1)
-            return
-
-        current_h = int(h * (1.0 - blink_pct))
-        if current_h <= 3:
-            draw.line([cx - w // 2, cy, cx + w // 2, cy], fill=1, width=2)
-            return
-
-        rx = 8 if w > 40 else 6
-        x0, y0 = cx - w // 2, cy - current_h // 2
-        x1, y1 = cx + w // 2, cy + current_h // 2
-        draw.rounded_rectangle([x0, y0, x1, y1], radius=rx, fill=1, outline=1)
-
-        if blink_pct < 0.6:
-            pupil_w = int(w * 0.42)
-            pupil_h = int(current_h * 0.55)
-            max_offset_x = (w - pupil_w) // 2 - 2
-            max_offset_y = (current_h - pupil_h) // 2 - 2
-
-            px = cx + int(gaze_x * max_offset_x)
-            py = cy + int(gaze_y * max_offset_y)
-
-            draw.rounded_rectangle(
-                [px - pupil_w // 2, py - pupil_h // 2, px + pupil_w // 2, py + pupil_h // 2],
-                radius=4, fill=0
-            )
-
-            dot_r = 3 if w > 40 else 2
-            dot_x = px - pupil_w // 4
-            dot_y = py - pupil_h // 4
-            draw.ellipse([dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r], fill=1)
-
-
-class OLEDDisplayController:
-    """Controls 1 or 2 SSD1306 OLED displays in a non-blocking background thread."""
-    def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C, port_2=None, addr_2=None):
-        self.renderer = RobotEyesRenderer(128, 64)
-        self.dev1 = None
-        self.dev2 = None
-        self.dual_screen = False
-
-        self.current_mood = "NEUTRAL"
-        self.gaze_x = 0.0
-        self.gaze_y = 0.0
-        self.running = False
-        self.thread = None
-
-        if not LUMA_AVAILABLE:
-            print("[OLED INFO] 'luma.oled' not installed. Running without physical display.")
-            return
-
-        # 1. Primary Display
-        try:
-            serial1 = i2c(port=port_1, address=addr_1)
-            self.dev1 = ssd1306(serial1)
-            print(f"[OLED] Screen 1 detected on I2C Bus {port_1} (Addr 0x{addr_1:X})")
-        except Exception as e:
-            print(f"[OLED WARNING] Screen 1 not detected on Bus {port_1} (Addr 0x{addr_1:X}): {e}")
-
-        # 2. Probe for Screen 2 (Auto-detect)
-        candidates = []
-        if port_2 is not None and addr_2 is not None:
-            candidates.append((port_2, addr_2))
-        else:
-            candidates = [
-                (1, 0x3D),  # Hardware I2C 1, Address Jumper 0x3D
-                (3, 0x3C),  # Software I2C 3 (GPIO 23/24)
-                (3, 0x3D),  # Software I2C 3, Address 0x3D
-                (6, 0x3C),  # Hardware I2C 6 (GPIO 22/23)
-            ]
-
-        for p, a in candidates:
-            if p == port_1 and a == addr_1:
-                continue
-            try:
-                serial_candidate = i2c(port=p, address=a)
-                dev_candidate = ssd1306(serial_candidate)
-                self.dev2 = dev_candidate
-                self.dual_screen = True
-                print(f"[OLED] Screen 2 AUTO-DETECTED on I2C Bus {p} (Addr 0x{a:X})! Dual Eyes Active.")
-                break
-            except Exception:
-                continue
-
-        if not self.dual_screen:
-            if dual_screen is True:
-                print("[OLED NOTE] Dual-screen requested, but 2nd OLED was not detected.")
-                print("            Displaying dual eyes side-by-side on Screen 1.")
-            else:
-                print("[OLED INFO] 1 OLED display active. Dual eyes rendered side-by-side on Screen 1.")
-
-    def set_expression(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0):
-        self.current_mood = mood
-        self.gaze_x = max(-1.0, min(1.0, gaze_x))
-        self.gaze_y = max(-1.0, min(1.0, gaze_y))
-
-    def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self._animation_loop, daemon=True)
-        self.thread.start()
-
-    def _animation_loop(self):
-        last_blink_time = time.time()
-        blink_interval = 3.5
-        blink_duration = 0.18
-
-        while self.running:
-            now = time.time()
-            elapsed_blink = now - last_blink_time
-
-            blink_pct = 0.0
-            if elapsed_blink > blink_interval:
-                t = (elapsed_blink - blink_interval) / blink_duration
-                if t <= 0.5:
-                    blink_pct = t * 2.0
-                elif t <= 1.0:
-                    blink_pct = (1.0 - t) * 2.0
-                else:
-                    last_blink_time = now
-                    blink_interval = 2.5 + (hash(str(now)) % 30) / 10.0
-
-            if self.dual_screen and self.dev1 and self.dev2:
-                img_l, img_r = self.renderer.render_dual_screen(
-                    self.current_mood, self.gaze_x, self.gaze_y, blink_pct
-                )
-                self.dev1.display(img_l)
-                self.dev2.display(img_r)
-            elif self.dev1:
-                img = self.renderer.render_single_screen(
-                    self.current_mood, self.gaze_x, self.gaze_y, blink_pct
-                )
-                self.dev1.display(img)
-
-            time.sleep(0.04)
-
-    def stop(self):
-        self.running = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
-        if self.dev1:
-            try:
-                self.dev1.clear()
-            except Exception:
-                pass
-        if self.dev2:
-            try:
-                self.dev2.clear()
-            except Exception:
-                pass
-
-
-# ---------------------------------------------------------------------------
-# 6. HUD OVERLAY
-# ---------------------------------------------------------------------------
 def draw_hud(frame, primary_face, pan_deg, tilt_deg, state_name, fps, latency_ms):
     h, w = frame.shape[:2]
     cx, cy = w // 2, h // 2
@@ -555,147 +143,179 @@ def draw_hud(frame, primary_face, pan_deg, tilt_deg, state_name, fps, latency_ms
     return frame
 
 
-# ---------------------------------------------------------------------------
-# 7. MAIN CONTROL LOOP
-# ---------------------------------------------------------------------------
-def main():
-    parser = argparse.ArgumentParser(description="Raspberry Pi 4 AI Face Tracking Robot")
-    parser.add_argument("--no-servo", action="store_true", help="Disable physical servo hardware")
-    parser.add_argument("--no-oled", action="store_true", help="Disable physical OLED hardware")
-    parser.add_argument("--dual-oled", action="store_true", help="Force dual OLED screen mode")
-    parser.add_argument("--pan-pin", type=int, default=12, help="GPIO pin for Pan servo (default: 12, Pin 32)")
-    parser.add_argument("--tilt-pin", type=int, default=19, help="GPIO pin for Tilt servo (default: 19, Pin 35)")
-    args = parser.parse_args()
+class FaceTrackingState:
+    """Pure tracking state, shared by the runtime and hardware-free tests."""
+    def __init__(self, face_loss_sec=1.5, deadband=0.08):
+        if not math.isfinite(face_loss_sec) or face_loss_sec < 0:
+            raise ValueError('Face-loss hold must be finite and nonnegative')
+        if not math.isfinite(deadband) or not 0 <= deadband < 1:
+            raise ValueError('Deadband must be between 0 and 1')
+        self.face_loss_sec, self.deadband = face_loss_sec, deadband
+        self.last_seen = self.last_update = self.lock_start_time = None
+        self.smooth_cx = self.smooth_cy = None
+        self.state_name, self.mood = 'SCANNING', 'NEUTRAL'
+        self.gaze_x = self.gaze_y = 0.0
 
-    print("=" * 65)
-    print("      FORVIZ - RASPBERRY PI 4 AI FACE TRACKING ROBOT")
-    print("=" * 65)
+    def update(self, faces, width, height, now):
+        dt = 1.0 / 30.0 if self.last_update is None else max(0.0, now - self.last_update)
+        self.last_update = now
+        self.mood = 'NEUTRAL'
+        if not faces:
+            self.lock_start_time = None
+            if self.last_seen is not None and now - self.last_seen < self.face_loss_sec:
+                self.state_name = 'HOLDING'
+            else:
+                self.state_name = 'SCANNING'
+                self.smooth_cx = self.smooth_cy = None
+                self.gaze_x, self.gaze_y = math.sin(now * 2.5) * 0.7, 0.0
+            return None
 
-    headless = os.environ.get("DISPLAY") is None
-    if headless:
-        print("[INFO] Headless mode (no monitor connected). Streaming telemetry.")
+        primary_face = max(faces, key=lambda face: face['box'][2] * face['box'][3])
+        x, y, box_w, box_h = primary_face['box']
+        raw_x, raw_y = x + box_w / 2.0, y + box_h / 2.0
+        if self.smooth_cx is None or self.last_seen is None:
+            self.smooth_cx, self.smooth_cy = raw_x, raw_y
+        else:
+            # Time-constant smoothing keeps the response comparable at different FPS.
+            alpha = 1.0 - math.exp(-min(dt, 0.1) / 0.08)
+            self.smooth_cx += alpha * (raw_x - self.smooth_cx)
+            self.smooth_cy += alpha * (raw_y - self.smooth_cy)
+        self.last_seen = now
+        self.gaze_x = (self.smooth_cx - width / 2.0) / (width / 2.0)
+        self.gaze_y = (self.smooth_cy - height / 2.0) / (height / 2.0)
+        if abs(self.gaze_x) <= self.deadband and abs(self.gaze_y) <= self.deadband:
+            self.state_name = 'LOCKED'
+            if self.lock_start_time is None:
+                self.lock_start_time = now
+            if now - self.lock_start_time >= 1.0:
+                self.mood = 'HAPPY'
+        else:
+            self.state_name = 'TRACKING'
+            self.lock_start_time = None
+        return primary_face
 
-    detector = FaceDetectorYuNet(YUNET_MODEL_PATH)
-    print("[AI] YuNet Face Detector loaded.")
 
-    camera = PiCameraStream(width=640, height=480, fps=30)
+def default_headless():
+    gui_lines = [line for line in cv2.getBuildInformation().splitlines() if line.strip().startswith('GUI:')]
+    no_gui = any('NONE' in line for line in gui_lines)
+    return no_gui or (sys.platform.startswith('linux') and not
+                      (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')))
 
-    tracker = None
-    if not args.no_servo:
-        tracker = PanTiltTracker(pan_pin=args.pan_pin, tilt_pin=args.tilt_pin)
-        tracker.center()
-    else:
-        print("[SERVOS] Disabled via --no-servo.")
 
-    face_display = None
-    if not args.no_oled:
-        # Auto-detects 1 or 2 screens automatically
-        face_display = OLEDDisplayController(dual_screen=args.dual_oled if args.dual_oled else None)
-        face_display.start()
-        face_display.set_expression("NEUTRAL", 0.0, 0.0)
-    else:
-        print("[OLED] Disabled via --no-oled.")
-
-    prev_time = time.time()
-    fps = 0.0
-    pan_deg, tilt_deg = 90.0, 90.0
-    state_name = "SCANNING"
-    lock_start_time = None
-
-    smooth_cx = None
-    smooth_cy = None
-    alpha = 0.35
-
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description='FORVIZ Raspberry Pi face tracker')
+    parser.add_argument('--no-servo', action='store_true', help='Simulate servo angles without GPIO output')
+    parser.add_argument('--no-oled', action='store_true', help='Disable physical OLED hardware')
+    oled = parser.add_mutually_exclusive_group()
+    oled.add_argument('--dual-oled', action='store_true', help='Request two OLEDs; fall back to available screens')
+    oled.add_argument('--single-oled', action='store_true', help='Use one OLED, rendering both eyes on it')
+    display = parser.add_mutually_exclusive_group()
+    display.add_argument('--headless', action='store_true', help='Disable OpenCV preview')
+    display.add_argument('--preview', action='store_true', help='Request OpenCV preview on a desktop')
+    parser.add_argument('--model', default=YUNET_MODEL_PATH, help='YuNet ONNX model path')
+    parser.add_argument('--pan-pin', type=int, default=12)
+    parser.add_argument('--tilt-pin', type=int, default=19)
+    parser.add_argument('--pan-min', type=float, default=40)
+    parser.add_argument('--pan-max', type=float, default=140)
+    parser.add_argument('--tilt-min', type=float, default=65)
+    parser.add_argument('--tilt-max', type=float, default=115)
+    parser.add_argument('--pan-center', type=float, default=90)
+    parser.add_argument('--tilt-center', type=float, default=90)
+    parser.add_argument('--servo-speed', type=float, default=36, help='Maximum servo speed in degrees/second')
+    parser.add_argument('--scan-speed', type=float, default=18, help='Pan scan speed in degrees/second')
+    parser.add_argument('--face-loss-sec', type=float, default=1.5, help='Hold position before resuming scan')
+    parser.add_argument('--idle-detach-after', type=float, default=None,
+                        help='Optional idle PWM timeout in seconds; releases head holding torque')
+    args = parser.parse_args(argv)
     try:
+        for axis in ('pan', 'tilt'):
+            low, high = PanTiltTracker._validate_range((getattr(args, axis + '_min'), getattr(args, axis + '_max')))
+            center = getattr(args, axis + '_center')
+            if not math.isfinite(center) or not low <= center <= high:
+                raise ValueError(f'{axis} center must be within its limits')
+        for value in (args.servo_speed, args.scan_speed):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError('Servo and scan speeds must be finite and positive')
+        if args.idle_detach_after is not None and (not math.isfinite(args.idle_detach_after) or args.idle_detach_after <= 0):
+            raise ValueError('Idle detach timeout must be finite and positive')
+        if not math.isfinite(args.face_loss_sec) or args.face_loss_sec < 0:
+            raise ValueError('Face-loss hold must be finite and nonnegative')
+        if not 0 <= args.pan_pin <= 27 or not 0 <= args.tilt_pin <= 27 or args.pan_pin == args.tilt_pin:
+            raise ValueError('Use two distinct BCM GPIO pins between 0 and 27')
+    except ValueError as exc:
+        parser.error(str(exc))
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    headless = args.headless or (not args.preview and default_headless())
+    print('FORVIZ - Raspberry Pi face tracking robot')
+    if headless:
+        print('[INFO] Headless telemetry active. Use Ctrl+C to stop.')
+    print(f'[SERVOS] Limits: pan {args.pan_min:g}..{args.pan_max:g}, tilt {args.tilt_min:g}..{args.tilt_max:g} degrees')
+    camera = tracker = face_display = None
+    try:
+        detector = FaceDetectorYuNet(args.model)
+        camera = PiCameraStream(width=640, height=480, fps=30)
+        tracker = PanTiltTracker(
+            pan_pin=args.pan_pin, tilt_pin=args.tilt_pin,
+            pan_range=(args.pan_min, args.pan_max), tilt_range=(args.tilt_min, args.tilt_max),
+            pan_center=args.pan_center, tilt_center=args.tilt_center,
+            max_speed_deg_per_sec=args.servo_speed, scan_speed_deg_per_sec=args.scan_speed,
+            idle_timeout_sec=args.idle_detach_after, hardware=not args.no_servo)
+        if not args.no_oled:
+            mode = False if args.single_oled else (True if args.dual_oled else None)
+            face_display = OLEDDisplayController(dual_screen=mode)
+            face_display.start()
+        state = FaceTrackingState(face_loss_sec=args.face_loss_sec)
+        prev_time, last_telemetry = time.monotonic(), 0.0
+        fps = 0.0
         while True:
             ret, frame = camera.read()
             if not ret:
-                print("[ERROR] Camera stream interrupted.")
+                print('[ERROR] Camera stream interrupted.')
                 break
-
-            h, w = frame.shape[:2]
-            cx, cy = w // 2, h // 2
-
-            curr_time = time.time()
-            dt = curr_time - prev_time
-            prev_time = curr_time
-            if dt > 0:
-                fps = 0.85 * fps + 0.15 * (1.0 / dt) if fps > 0 else (1.0 / dt)
-
+            height, width = frame.shape[:2]
             faces, latency_ms = detector.detect(frame)
-            primary_face = None
-
-            if faces:
-                faces.sort(key=lambda f: f["box"][2] * f["box"][3], reverse=True)
-                primary_face = faces[0]
-
-                x, y, bw, bh = primary_face["box"]
-                raw_cx, raw_cy = x + bw // 2, y + bh // 2
-
-                if smooth_cx is None:
-                    smooth_cx, smooth_cy = float(raw_cx), float(raw_cy)
-                else:
-                    smooth_cx = alpha * raw_cx + (1.0 - alpha) * smooth_cx
-                    smooth_cy = alpha * raw_cy + (1.0 - alpha) * smooth_cy
-
-                norm_x = (smooth_cx - cx) / (w / 2.0)
-                norm_y = (smooth_cy - cy) / (h / 2.0)
-
-                if abs(norm_x) < 0.10 and abs(norm_y) < 0.10:
-                    state_name = "LOCKED"
-                    if lock_start_time is None:
-                        lock_start_time = time.time()
-                    
-                    if (time.time() - lock_start_time) > 1.0:
-                        if face_display:
-                            face_display.set_expression("HAPPY", 0.0, 0.0)
-                    else:
-                        if face_display:
-                            face_display.set_expression("NEUTRAL", norm_x * 0.8, norm_y * 0.8)
-                else:
-                    state_name = "TRACKING"
-                    lock_start_time = None
-                    if face_display:
-                        face_display.set_expression("NEUTRAL", norm_x * 0.9, norm_y * 0.9)
-
-                if tracker:
-                    pan_deg, tilt_deg = tracker.track_face(smooth_cx, smooth_cy, w, h)
-
+            now = time.monotonic()
+            dt, prev_time = now - prev_time, now
+            if dt > 0:
+                fps = 0.85 * fps + 0.15 / dt if fps > 0 else 1.0 / dt
+            primary_face = state.update(faces, width, height, now)
+            if primary_face is not None:
+                pan, tilt = tracker.track_face(state.smooth_cx, state.smooth_cy, width, height, state.deadband)
+            elif state.state_name == 'HOLDING':
+                pan, tilt = tracker.hold()
             else:
-                state_name = "SCANNING"
-                lock_start_time = None
-                smooth_cx = None
-                smooth_cy = None
-
-                if tracker:
-                    pan_deg, tilt_deg = tracker.step_scan()
-
-                if face_display:
-                    scan_gaze = math.sin(time.time() * 2.5) * 0.7
-                    face_display.set_expression("NEUTRAL", gaze_x=scan_gaze, gaze_y=0.0)
-
+                pan, tilt = tracker.step_scan()
+            if face_display:
+                face_display.set_expression(state.mood, state.gaze_x, state.gaze_y)
             if not headless:
-                hud = draw_hud(frame, primary_face, pan_deg, tilt_deg, state_name, fps, latency_ms)
-                cv2.imshow("Raspberry Pi 4 - Robot Tracker", hud)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-            else:
-                print(f"\r[FPS: {fps:4.1f}] State: {state_name:8s} | Pan: {pan_deg:5.1f} deg | Tilt: {tilt_deg:5.1f} deg | Face: {'YES' if primary_face else 'NO '}", end="", flush=True)
-
+                try:
+                    cv2.imshow('FORVIZ Robot Tracker', draw_hud(frame, primary_face, pan, tilt, state.state_name, fps, latency_ms))
+                    if cv2.waitKey(1) & 0xFF in (ord('q'), 27):
+                        break
+                except cv2.error as exc:
+                    print(f'[PREVIEW WARNING] Preview unavailable; continuing headless: {exc}')
+                    headless = True
+            elif now - last_telemetry >= 0.5:
+                print(f'FPS {fps:4.1f} | {state.state_name:8s} | Pan {pan:5.1f} | Tilt {tilt:5.1f}')
+                last_telemetry = now
     except KeyboardInterrupt:
-        print("\n[STOP] Stopping robot...")
+        print('[STOP] Stopping robot...')
     finally:
-        if tracker:
-            tracker.center()
-            time.sleep(0.3)
-            tracker.close()
-        if face_display:
-            face_display.stop()
-        camera.release()
+        # No automatic center jump: release motion at its current position.
+        for resource, method in ((tracker, 'close'), (face_display, 'stop'), (camera, 'release')):
+            if resource is not None:
+                try:
+                    getattr(resource, method)()
+                except Exception as exc:
+                    print(f'[CLEANUP WARNING] {method}: {exc}')
         if not headless:
             cv2.destroyAllWindows()
-        print("Robot gracefully shut down.")
+        print('Robot shut down; servo PWM released.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,65 +1,18 @@
+"""Interactive PC vision demo. This module does not open a camera on import."""
 import cv2
 import time
-import numpy as np
-import os
+from pathlib import Path
+from pi_tracker import FaceDetectorYuNet, YUNET_MODEL_PATH
 
-# Paths to models
-YUNET_MODEL_PATH = "face_detection_yunet_2023mar.onnx"
-YOLO_MODEL_PATH = "yolov8n.pt"
-
-# Try loading Ultralytics YOLO
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-
-
-class FaceDetectorYuNet:
-    """Lightweight 232KB deep learning face detector using OpenCV DNN."""
-    def __init__(self, model_path=YUNET_MODEL_PATH, conf_threshold=0.6, nms_threshold=0.3):
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file not found: {model_path}")
-        self.conf_threshold = conf_threshold
-        self.nms_threshold = nms_threshold
-        self.detector = cv2.FaceDetectorYN.create(
-            model=model_path,
-            config="",
-            input_size=(320, 320),
-            score_threshold=conf_threshold,
-            nms_threshold=nms_threshold,
-            top_k=5000,
-            backend_id=cv2.dnn.DNN_BACKEND_OPENCV,
-            target_id=cv2.dnn.DNN_TARGET_CPU
-        )
-
-    def detect(self, frame):
-        h, w = frame.shape[:2]
-        self.detector.setInputSize((w, h))
-        
-        start_time = time.perf_counter()
-        _, faces = self.detector.detect(frame)
-        latency_ms = (time.perf_counter() - start_time) * 1000
-
-        results = []
-        if faces is not None:
-            for face in faces:
-                x, y, bw, bh = map(int, face[0:4])
-                conf = float(face[14])
-                landmarks = [(int(face[i]), int(face[i+1])) for i in range(4, 14, 2)]
-                results.append({
-                    "box": (x, y, bw, bh),
-                    "confidence": conf,
-                    "landmarks": landmarks,
-                    "label": "Face"
-                })
-        return results, latency_ms
-
+__test__ = False  # Interactive demo; hardware-free regressions live in tests/.
+YOLO_MODEL_PATH = str(Path(__file__).resolve().with_name('yolov8n.pt'))
 
 class ObjectDetectorYOLO:
     """YOLOv8 Nano object detector."""
     def __init__(self, model_path=YOLO_MODEL_PATH, conf_threshold=0.45):
-        if not YOLO_AVAILABLE:
+        try:
+            from ultralytics import YOLO
+        except ImportError:
             raise RuntimeError("Ultralytics library not installed.")
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
@@ -85,7 +38,7 @@ class ObjectDetectorYOLO:
 
 def draw_hud_and_telemetry(frame, primary_target, latency_ms, fps, mode_name, show_hud=True):
     """
-    HUD and Telemetry tailored for a STATIONARY 360-DEGREE ROTATING TURRET / ROBOT.
+    HUD and Telemetry tailored for a BOUNDED PAN/TILT ROBOT (vision telemetry only).
     No forward/backward translation — only pure Pan / Yaw rotation tracking.
     """
     h, w = frame.shape[:2]
@@ -96,15 +49,15 @@ def draw_hud_and_telemetry(frame, primary_target, latency_ms, fps, mode_name, sh
     H_FOV_DEG = 65.0
     
     # Deadband tolerance in pixels (center zone where the robot stays still and doesn't jitter)
-    deadband_x = int(w * 0.08) # 8% deadband zone
+    deadband_x = int((w / 2.0) * 0.08) # Same normalized deadband as the robot
     
     # Rotation command & LCD telemetry defaults
-    rotation_cmd = "360 SWEEP SCAN (SEEKING HUMAN)"
+    rotation_cmd = "PAN SWEEP SCAN (SEEKING HUMAN)"
     cmd_color = (0, 165, 255)  # Orange
     yaw_angle_str = "TARGET: NONE"
     rotation_speed_pct = 25    # gentle search sweep speed
     expr_art = "[ o   o ]\n  ---  "
-    expr_text = "Scanning 360..."
+    expr_text = "Scanning..."
 
     if primary_target is not None:
         x, y, bw, bh = primary_target["box"]
@@ -192,7 +145,7 @@ def draw_hud_and_telemetry(frame, primary_target, latency_ms, fps, mode_name, sh
     # Top Banner Text
     cv2.putText(frame, f"MODE: {mode_name}", (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2)
     cv2.putText(frame, f"FPS: {fps:4.1f} | Latency: {latency_ms:4.1f} ms", (15, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1)
-    cv2.putText(frame, "STATIONARY 360 TURRET", (w - 230, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+    cv2.putText(frame, "FORVIZ PAN/TILT", (w - 230, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
 
     # Bottom Telemetry Bar Text
     cv2.putText(frame, f"ROTATION: {rotation_cmd}", (15, h - 42), cv2.FONT_HERSHEY_SIMPLEX, 0.65, cmd_color, 2)
@@ -204,7 +157,7 @@ def draw_hud_and_telemetry(frame, primary_target, latency_ms, fps, mode_name, sh
 
 def main():
     print("=" * 68)
-    print("  STATIONARY 360-DEGREE ROTATING ROBOT - VISION TRACKING HARNESS")
+    print("  FORVIZ PAN/TILT ROBOT - VISION TRACKING HARNESS")
     print("=" * 68)
     print("Loading models...")
     
@@ -248,7 +201,7 @@ def main():
     print("-" * 68)
 
     show_hud = True
-    prev_time = time.time()
+    prev_time = time.monotonic()
     fps = 0.0
 
     try:
@@ -261,7 +214,7 @@ def main():
             # Mirror for intuitive tracking view
             frame = cv2.flip(frame, 1)
 
-            curr_time = time.time()
+            curr_time = time.monotonic()
             dt = curr_time - prev_time
             prev_time = curr_time
             if dt > 0:
@@ -305,7 +258,7 @@ def main():
 
             frame = draw_hud_and_telemetry(frame, primary_target, latency_ms, fps, mode_name, show_hud)
 
-            cv2.imshow("Stationary 360 Robot Tracker", frame)
+            cv2.imshow("FORVIZ Vision Demo", frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q') or key == 27:

@@ -1,0 +1,4 @@
+# Only needed to regenerate the V3 mechanical parts; robot runtime stays separate.
+manifold3d==3.5.2
+trimesh==5.1.0
+numpy>=1.26
