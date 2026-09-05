@@ -1,13 +1,14 @@
 ﻿"""
 Raspberry Pi 4 AI Face Tracker with Dual SG90 Servos & SSD1306 OLED Expressive Eyes
 ===================================================================================
-All-In-One Self-Contained Script (Anti-Overheat, Jitter-Free Edition).
+All-In-One Self-Contained Script (Anti-Overheat, Jitter-Free & Auto-Dual-OLED Edition).
 Pinout:
   - Pan Servo (Yaw):   GPIO 12 (Physical Pin 32) -> PWM0
   - Tilt Servo (Pitch): GPIO 19 (Physical Pin 35) -> PWM1
   - Ground (GND):      Physical Pin 34 (Between Pins 32 and 35)
   - 5V (Power):        Physical Pin 2 or 4 (or external 5V)
-  - OLED Display:      SDA = GPIO 2 (Pin 3), SCL = GPIO 3 (Pin 5), 3.3V, GND
+  - OLED Screen 1:     SDA = GPIO 2 (Pin 3), SCL = GPIO 3 (Pin 5), 3.3V, GND
+  - OLED Screen 2:     SDA = GPIO 23 (Pin 16), SCL = GPIO 24 (Pin 18) [or Bus 1 Addr 0x3D]
 """
 
 import cv2
@@ -329,7 +330,7 @@ class PanTiltTracker:
 
 
 # ---------------------------------------------------------------------------
-# 5. OLED DISPLAY ANIMATED EYES (SSD1306)
+# 5. OLED DISPLAY ANIMATED EYES (AUTO-DETECT 1 OR 2 SCREENS)
 # ---------------------------------------------------------------------------
 class RobotEyesRenderer:
     def __init__(self, width=128, height=64):
@@ -410,11 +411,11 @@ class RobotEyesRenderer:
 
 class OLEDDisplayController:
     """Controls 1 or 2 SSD1306 OLED displays in a non-blocking background thread."""
-    def __init__(self, dual_screen=False, port_1=1, addr_1=0x3C, port_2=3, addr_2=0x3C):
-        self.dual_screen = dual_screen
+    def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C, port_2=None, addr_2=None):
         self.renderer = RobotEyesRenderer(128, 64)
         self.dev1 = None
         self.dev2 = None
+        self.dual_screen = False
 
         self.current_mood = "NEUTRAL"
         self.gaze_x = 0.0
@@ -422,24 +423,49 @@ class OLEDDisplayController:
         self.running = False
         self.thread = None
 
-        if LUMA_AVAILABLE:
-            try:
-                serial1 = i2c(port=port_1, address=addr_1)
-                self.dev1 = ssd1306(serial1)
-                print(f"[OLED] Screen 1 initialized (I2C Bus {port_1}, Addr 0x{addr_1:X})")
-
-                if dual_screen:
-                    try:
-                        serial2 = i2c(port=port_2, address=addr_2)
-                        self.dev2 = ssd1306(serial2)
-                        print(f"[OLED] Screen 2 initialized (I2C Bus {port_2}, Addr 0x{addr_2:X})")
-                    except Exception as e:
-                        print(f"[OLED WARNING] Screen 2 failed ({e}). Reverting to 1 screen.")
-                        self.dual_screen = False
-            except Exception as e:
-                print(f"[OLED WARNING] OLED hardware init failed ({e}). Running headless.")
-        else:
+        if not LUMA_AVAILABLE:
             print("[OLED INFO] 'luma.oled' not installed. Running without physical display.")
+            return
+
+        # 1. Primary Display
+        try:
+            serial1 = i2c(port=port_1, address=addr_1)
+            self.dev1 = ssd1306(serial1)
+            print(f"[OLED] Screen 1 detected on I2C Bus {port_1} (Addr 0x{addr_1:X})")
+        except Exception as e:
+            print(f"[OLED WARNING] Screen 1 not detected on Bus {port_1} (Addr 0x{addr_1:X}): {e}")
+
+        # 2. Probe for Screen 2 (Auto-detect)
+        candidates = []
+        if port_2 is not None and addr_2 is not None:
+            candidates.append((port_2, addr_2))
+        else:
+            candidates = [
+                (1, 0x3D),  # Hardware I2C 1, Address Jumper 0x3D
+                (3, 0x3C),  # Software I2C 3 (GPIO 23/24)
+                (3, 0x3D),  # Software I2C 3, Address 0x3D
+                (6, 0x3C),  # Hardware I2C 6 (GPIO 22/23)
+            ]
+
+        for p, a in candidates:
+            if p == port_1 and a == addr_1:
+                continue
+            try:
+                serial_candidate = i2c(port=p, address=a)
+                dev_candidate = ssd1306(serial_candidate)
+                self.dev2 = dev_candidate
+                self.dual_screen = True
+                print(f"[OLED] Screen 2 AUTO-DETECTED on I2C Bus {p} (Addr 0x{a:X})! Dual Eyes Active.")
+                break
+            except Exception:
+                continue
+
+        if not self.dual_screen:
+            if dual_screen is True:
+                print("[OLED NOTE] Dual-screen requested, but 2nd OLED was not detected.")
+                print("            Displaying dual eyes side-by-side on Screen 1.")
+            else:
+                print("[OLED INFO] 1 OLED display active. Dual eyes rendered side-by-side on Screen 1.")
 
     def set_expression(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0):
         self.current_mood = mood
@@ -536,7 +562,7 @@ def main():
     parser = argparse.ArgumentParser(description="Raspberry Pi 4 AI Face Tracking Robot")
     parser.add_argument("--no-servo", action="store_true", help="Disable physical servo hardware")
     parser.add_argument("--no-oled", action="store_true", help="Disable physical OLED hardware")
-    parser.add_argument("--dual-oled", action="store_true", help="Enable 2x OLED screen mode")
+    parser.add_argument("--dual-oled", action="store_true", help="Force dual OLED screen mode")
     parser.add_argument("--pan-pin", type=int, default=12, help="GPIO pin for Pan servo (default: 12, Pin 32)")
     parser.add_argument("--tilt-pin", type=int, default=19, help="GPIO pin for Tilt servo (default: 19, Pin 35)")
     args = parser.parse_args()
@@ -563,7 +589,8 @@ def main():
 
     face_display = None
     if not args.no_oled:
-        face_display = OLEDDisplayController(dual_screen=args.dual_oled)
+        # Auto-detects 1 or 2 screens automatically
+        face_display = OLEDDisplayController(dual_screen=args.dual_oled if args.dual_oled else None)
         face_display.start()
         face_display.set_expression("NEUTRAL", 0.0, 0.0)
     else:
@@ -575,10 +602,9 @@ def main():
     state_name = "SCANNING"
     lock_start_time = None
 
-    # Low-pass filter (EMA) for face coordinates to eliminate camera jitter
     smooth_cx = None
     smooth_cy = None
-    alpha = 0.35  # Filter smoothing factor (0.0 = freeze, 1.0 = raw)
+    alpha = 0.35
 
     try:
         while True:
@@ -606,7 +632,6 @@ def main():
                 x, y, bw, bh = primary_face["box"]
                 raw_cx, raw_cy = x + bw // 2, y + bh // 2
 
-                # Apply EMA filter to remove pixel fluttering jitter
                 if smooth_cx is None:
                     smooth_cx, smooth_cy = float(raw_cx), float(raw_cy)
                 else:
@@ -616,7 +641,6 @@ def main():
                 norm_x = (smooth_cx - cx) / (w / 2.0)
                 norm_y = (smooth_cy - cy) / (h / 2.0)
 
-                # Deadband check
                 if abs(norm_x) < 0.10 and abs(norm_y) < 0.10:
                     state_name = "LOCKED"
                     if lock_start_time is None:
@@ -634,7 +658,6 @@ def main():
                     if face_display:
                         face_display.set_expression("NEUTRAL", norm_x * 0.9, norm_y * 0.9)
 
-                # Track smoothly
                 if tracker:
                     pan_deg, tilt_deg = tracker.track_face(smooth_cx, smooth_cy, w, h)
 
