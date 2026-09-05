@@ -3,8 +3,10 @@ Raspberry Pi 4 AI Face Tracker with Dual SG90 Servos & SSD1306 OLED Expressive E
 ===================================================================================
 All-In-One Self-Contained Script (Anti-Overheat, Jitter-Free Edition).
 Pinout:
-  - Pan Servo (Yaw):   GPIO 12 (Physical Pin 32)
-  - Tilt Servo (Pitch): GPIO 13 (Physical Pin 33)
+  - Pan Servo (Yaw):   GPIO 12 (Physical Pin 32) -> PWM0
+  - Tilt Servo (Pitch): GPIO 19 (Physical Pin 35) -> PWM1
+  - Ground (GND):      Physical Pin 34 (Between Pins 32 and 35)
+  - 5V (Power):        Physical Pin 2 or 4 (or external 5V)
   - OLED Display:      SDA = GPIO 2 (Pin 3), SCL = GPIO 3 (Pin 5), 3.3V, GND
 """
 
@@ -83,7 +85,7 @@ class PiCameraStream:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             if not self.cap.isOpened():
-                raise RuntimeError("Failed to open camera! Check CSI rib cable or run 'rpicam-hello'.")
+                raise RuntimeError("Failed to open camera! Check CSI ribbon cable or run 'rpicam-hello'.")
 
     def read(self):
         if self.use_picam2:
@@ -143,17 +145,17 @@ class FaceDetectorYuNet:
 
 
 # ---------------------------------------------------------------------------
-# 4. ANTI-OVERHEAT, SMOOTH SERVO CONTROLLER (SG90 PAN & TILT)
+# 4. ANTI-OVERHEAT, JITTER-FREE SERVO CONTROLLER (PAN=12, TILT=19)
 # ---------------------------------------------------------------------------
 class PanTiltTracker:
     """
     Smooth, anti-overheat servo controller.
-    Pan: GPIO 12 (Pin 32), Tilt: GPIO 13 (Pin 33)
+    Default: Pan = GPIO 12 (Pin 32), Tilt = GPIO 19 (Pin 35)
     """
-    def __init__(self, pan_pin=12, tilt_pin=13,
+    def __init__(self, pan_pin=12, tilt_pin=19,
                  pan_range=(20, 160), tilt_range=(45, 135),
                  pan_center=90, tilt_center=90,
-                 max_speed_deg=1.8, idle_timeout_sec=0.7):
+                 max_speed_deg=1.6, idle_timeout_sec=0.6):
         self.pan_pin = pan_pin
         self.tilt_pin = tilt_pin
         self.pan_min, self.pan_max = pan_range
@@ -180,14 +182,15 @@ class PanTiltTracker:
         self.scan_direction = 1
         self.scan_speed = 0.8
 
-        # 1. Native pigpio Hardware DMA (Best, zero jitter)
+        # 1. Native pigpio Hardware DMA (Primary, zero jitter)
         if PIGPIO_AVAILABLE:
             try:
                 self.pi = pigpio.pi()
                 if self.pi.connected:
                     self.backend = "PIGPIO"
-                    print(f"[SERVOS] Connected to pigpio daemon (Hardware DMA PWM active).")
-                    print(f"[SERVOS] Pan = GPIO {pan_pin} (Pin 32), Tilt = GPIO {tilt_pin} (Pin 33)")
+                    print(f"[SERVOS] Connected to pigpio (Hardware DMA PWM active).")
+                    print(f"         Pan:  GPIO {pan_pin} (Pin 32)")
+                    print(f"         Tilt: GPIO {tilt_pin} (Pin 35)")
                 else:
                     self.pi = None
             except Exception:
@@ -244,7 +247,7 @@ class PanTiltTracker:
                 pass
 
     def sleep_idle(self):
-        """ANTI-OVERHEAT: Detach PWM signal when stationary so motor stays cool."""
+        """ANTI-OVERHEAT: Detach PWM signal when stationary so motors stay cool."""
         if self.is_sleeping:
             return
         if (time.time() - self.last_move_time) > self.idle_timeout_sec:
@@ -268,7 +271,7 @@ class PanTiltTracker:
             self.sleep_idle()
             return self.current_pan, self.current_tilt
 
-        step_pan = -norm_dx * 2.8
+        step_pan = -norm_dx * 2.5
         step_tilt = norm_dy * 2.0
 
         self.target_pan = max(self.pan_min, min(self.pan_max, self.current_pan + step_pan))
@@ -281,7 +284,7 @@ class PanTiltTracker:
         delta_p = max(-self.max_speed_deg, min(self.max_speed_deg, delta_p))
         delta_t = max(-self.max_speed_deg, min(self.max_speed_deg, delta_t))
 
-        if abs(delta_p) > 0.3 or abs(delta_t) > 0.3:
+        if abs(delta_p) > 0.25 or abs(delta_t) > 0.25:
             self.current_pan += delta_p
             self.current_tilt += delta_t
             self._write_angles(self.current_pan, self.current_tilt)
@@ -535,7 +538,7 @@ def main():
     parser.add_argument("--no-oled", action="store_true", help="Disable physical OLED hardware")
     parser.add_argument("--dual-oled", action="store_true", help="Enable 2x OLED screen mode")
     parser.add_argument("--pan-pin", type=int, default=12, help="GPIO pin for Pan servo (default: 12, Pin 32)")
-    parser.add_argument("--tilt-pin", type=int, default=13, help="GPIO pin for Tilt servo (default: 13, Pin 33)")
+    parser.add_argument("--tilt-pin", type=int, default=19, help="GPIO pin for Tilt servo (default: 19, Pin 35)")
     args = parser.parse_args()
 
     print("=" * 65)
@@ -572,6 +575,11 @@ def main():
     state_name = "SCANNING"
     lock_start_time = None
 
+    # Low-pass filter (EMA) for face coordinates to eliminate camera jitter
+    smooth_cx = None
+    smooth_cy = None
+    alpha = 0.35  # Filter smoothing factor (0.0 = freeze, 1.0 = raw)
+
     try:
         while True:
             ret, frame = camera.read()
@@ -596,17 +604,25 @@ def main():
                 primary_face = faces[0]
 
                 x, y, bw, bh = primary_face["box"]
-                target_cx, target_cy = x + bw // 2, y + bh // 2
+                raw_cx, raw_cy = x + bw // 2, y + bh // 2
 
-                norm_x = (target_cx - cx) / (w / 2.0)
-                norm_y = (target_cy - cy) / (h / 2.0)
+                # Apply EMA filter to remove pixel fluttering jitter
+                if smooth_cx is None:
+                    smooth_cx, smooth_cy = float(raw_cx), float(raw_cy)
+                else:
+                    smooth_cx = alpha * raw_cx + (1.0 - alpha) * smooth_cx
+                    smooth_cy = alpha * raw_cy + (1.0 - alpha) * smooth_cy
 
-                if abs(norm_x) < 0.12 and abs(norm_y) < 0.12:
+                norm_x = (smooth_cx - cx) / (w / 2.0)
+                norm_y = (smooth_cy - cy) / (h / 2.0)
+
+                # Deadband check
+                if abs(norm_x) < 0.10 and abs(norm_y) < 0.10:
                     state_name = "LOCKED"
                     if lock_start_time is None:
                         lock_start_time = time.time()
                     
-                    if (time.time() - lock_start_time) > 1.2:
+                    if (time.time() - lock_start_time) > 1.0:
                         if face_display:
                             face_display.set_expression("HAPPY", 0.0, 0.0)
                     else:
@@ -618,12 +634,15 @@ def main():
                     if face_display:
                         face_display.set_expression("NEUTRAL", norm_x * 0.9, norm_y * 0.9)
 
+                # Track smoothly
                 if tracker:
-                    pan_deg, tilt_deg = tracker.track_face(target_cx, target_cy, w, h)
+                    pan_deg, tilt_deg = tracker.track_face(smooth_cx, smooth_cy, w, h)
 
             else:
                 state_name = "SCANNING"
                 lock_start_time = None
+                smooth_cx = None
+                smooth_cy = None
 
                 if tracker:
                     pan_deg, tilt_deg = tracker.step_scan()

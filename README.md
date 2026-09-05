@@ -29,7 +29,7 @@ The robot stays stationary, tracks your face as you move around the room, locks 
 | **Pan (Horizontal)** | Orange / Yellow (Signal) | **GPIO 12** (Physical Pin 32) | Hardware-timed PWM |
 | | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
 | | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
-| **Tilt (Vertical)** | Orange / Yellow (Signal) | **GPIO 13** (Physical Pin 33) | Hardware-timed PWM |
+| **Tilt (Vertical)** | Orange / Yellow (Signal) | **GPIO 19** (Physical Pin 35) | Hardware-timed PWM |
 | | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
 | | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
 
@@ -116,7 +116,7 @@ python3 pi_tracker.py
 - `--no-servo`: Runs vision and OLED without moving physical servos.
 - `--no-oled`: Runs vision and servos without OLED screens.
 - `--dual-oled`: Enables dual-screen eye rendering.
-- `--pan-pin 18 --tilt-pin 13`: Custom GPIO pins for servos.
+- `--pan-pin 12 --tilt-pin 19`: Custom GPIO pins for servos.
 
 ---
 
@@ -128,4 +128,5 @@ python3 pi_tracker.py
 | **`TRACKING`** | Moves Pan & Tilt to center target | Pupils dynamically gaze toward your face coordinates |
 | **`LOCKED`** | Holds position steadily | Cute happy arcs (`^ ^`) with pink blush lines |
 | **`FACE GONE`** | Pauses 1.5s then resumes sweep | Eyes open wide questioning before scanning |
+
 

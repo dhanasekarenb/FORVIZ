@@ -1,24 +1,21 @@
 ﻿"""
-High-Precision, Anti-Overheat, Jitter-Free Servo Controller for 2x SG90 (Pan & Tilt).
-=====================================================================================
-Features:
-  - Hardware DMA PWM via pigpio (zero CPU jitter, zero twitching)
-  - Auto-Rest: cuts PWM signal when idle/locked to prevent motor humming & overheating
-  - Slew-rate limiter & exponential smoothing for cinematic smooth head motion
-  - Safe angle clamping (Pan: 20-160 deg, Tilt: 45-135 deg) to prevent gear stalling
-  - Default Pins: Pan = GPIO 12 (Pin 32), Tilt = GPIO 13 (Pin 33)
+High-Precision, Anti-Overheat, Jitter-Free Servo Controller for 2x SG90.
+========================================================================
+Default Pinout:
+  - Pan  (Horizontal): GPIO 12 (Physical Pin 32) -> PWM0
+  - Tilt (Vertical):   GPIO 19 (Physical Pin 35) -> PWM1
+  - Ground:            Physical Pin 34
+  - Power:             5V (Physical Pin 2 or 4)
 """
 import time
 import math
 
-# Try importing pigpio directly first (best performance on Raspberry Pi)
 try:
     import pigpio
     PIGPIO_AVAILABLE = True
 except ImportError:
     PIGPIO_AVAILABLE = False
 
-# Fallback to gpiozero
 try:
     from gpiozero import AngularServo
     from gpiozero.pins.pigpio import PiGPIOFactory
@@ -29,12 +26,17 @@ except ImportError:
 
 class PanTiltTracker:
     """
-    Controls Pan (GPIO 12) and Tilt (GPIO 13) SG90 servos smoothly and safely.
+    Controls Pan (GPIO 12) and Tilt (GPIO 19) SG90 servos.
+    Features:
+      - Hardware DMA PWM via pigpio (zero jitter)
+      - Anti-overheat auto-rest (detaches PWM when stationary)
+      - Slew-rate limiting for cinematic smooth motion
+      - Safe angle clamping (Pan: 20-160 deg, Tilt: 45-135 deg)
     """
-    def __init__(self, pan_pin=12, tilt_pin=13,
+    def __init__(self, pan_pin=12, tilt_pin=19,
                  pan_range=(20, 160), tilt_range=(45, 135),
                  pan_center=90, tilt_center=90,
-                 max_speed_deg=2.0, idle_timeout_sec=0.8):
+                 max_speed_deg=1.6, idle_timeout_sec=0.6):
         self.pan_pin = pan_pin
         self.tilt_pin = tilt_pin
         self.pan_min, self.pan_max = pan_range
@@ -47,11 +49,10 @@ class PanTiltTracker:
         self.target_pan = float(pan_center)
         self.target_tilt = float(tilt_center)
 
-        # SG90 safe microsecond pulse widths (600us - 2300us)
+        # SG90 safe microsecond pulse widths
         self.min_us = 600
         self.max_us = 2300
 
-        # Motion & Idle state
         self.last_move_time = time.time()
         self.is_sleeping = False
         self.backend = "DUMMY"
@@ -59,24 +60,24 @@ class PanTiltTracker:
         self.pan_servo = None
         self.tilt_servo = None
 
-        # Scan state
         self.scan_direction = 1
-        self.scan_speed = 0.8  # slow, gentle sweep
+        self.scan_speed = 0.8
 
-        # 1. Attempt Native pigpio (Hardware DMA - Best)
+        # 1. Native pigpio Hardware DMA (Primary)
         if PIGPIO_AVAILABLE:
             try:
                 self.pi = pigpio.pi()
                 if self.pi.connected:
                     self.backend = "PIGPIO"
-                    print(f"[SERVOS] Connected to pigpio daemon. Hardware DMA PWM active.")
-                    print(f"[SERVOS] Pan = GPIO {pan_pin} (Pin 32), Tilt = GPIO {tilt_pin} (Pin 33)")
+                    print(f"[SERVOS] pigpio Hardware DMA active.")
+                    print(f"         Pan:  GPIO {pan_pin} (Pin 32)")
+                    print(f"         Tilt: GPIO {tilt_pin} (Pin 35)")
                 else:
                     self.pi = None
             except Exception:
                 self.pi = None
 
-        # 2. Fallback to gpiozero
+        # 2. Fallback gpiozero
         if self.backend == "DUMMY" and GPIOZERO_AVAILABLE:
             try:
                 factory = None
@@ -101,18 +102,18 @@ class PanTiltTracker:
                 print(f"[SERVOS WARNING] gpiozero init failed ({e}).")
 
         if self.backend == "DUMMY":
-            print("[SERVOS INFO] No physical GPIO driver available. Running in dummy simulation.")
+            print("[SERVOS INFO] Running in simulation mode (no physical GPIO hardware detected).")
 
-        # Initialize to center
+        # Command initial center
         self._write_angles(self.current_pan, self.current_tilt)
 
     def angle_to_us(self, angle_deg):
-        """Converts 0-180 degree angle to 600-2300 microsecond pulse width."""
+        """Converts angle (0-180 deg) to pulse width in microseconds (600-2300 us)."""
         clamped = max(0.0, min(180.0, angle_deg))
         return int(self.min_us + (clamped / 180.0) * (self.max_us - self.min_us))
 
     def _write_angles(self, pan_deg, tilt_deg):
-        """Sends PWM pulses to hardware."""
+        """Sends PWM signals to the hardware."""
         self.is_sleeping = False
         self.last_move_time = time.time()
 
@@ -132,8 +133,8 @@ class PanTiltTracker:
     def sleep_idle(self):
         """
         ANTI-OVERHEAT PROTECTION:
-        Cuts PWM pulses when stationary. The servo stops humming, draws 0 mA stall current,
-        and cools down completely.
+        Detaches the PWM pulses when stationary. The servo stops humming, draws 0 mA
+        stall current, and remains completely cool.
         """
         if self.is_sleeping:
             return
@@ -151,33 +152,30 @@ class PanTiltTracker:
 
     def track_face(self, target_cx, target_cy, frame_w=640, frame_h=480, deadband=0.08):
         """
-        Calculates smooth, damped pan & tilt steps to track a face.
+        Smoothly adjusts pan and tilt angles to center the target face.
         """
         norm_dx = (target_cx - (frame_w / 2.0)) / (frame_w / 2.0)
         norm_dy = (target_cy - (frame_h / 2.0)) / (frame_h / 2.0)
 
-        # Ignore tiny micro-movements (deadband)
+        # Ignore micro-movements within deadband to stop twitching
         if abs(norm_dx) < deadband and abs(norm_dy) < deadband:
             self.sleep_idle()
             return self.current_pan, self.current_tilt
 
-        # Compute proportional step (inverted pan for standard selfie view)
-        step_pan = -norm_dx * 2.8
+        step_pan = -norm_dx * 2.5
         step_tilt = norm_dy * 2.0
 
-        # Update targets with safe clamping
         self.target_pan = max(self.pan_min, min(self.pan_max, self.current_pan + step_pan))
         self.target_tilt = max(self.tilt_min, min(self.tilt_max, self.current_tilt + step_tilt))
 
-        # Slew-rate limiter: clamp step to max_speed_deg to prevent violent jerks
+        # Slew-rate limiter prevents sudden jerking
         delta_p = self.target_pan - self.current_pan
         delta_t = self.target_tilt - self.current_tilt
 
         delta_p = max(-self.max_speed_deg, min(self.max_speed_deg, delta_p))
         delta_t = max(-self.max_speed_deg, min(self.max_speed_deg, delta_t))
 
-        # Apply smooth movement only if significant
-        if abs(delta_p) > 0.3 or abs(delta_t) > 0.3:
+        if abs(delta_p) > 0.25 or abs(delta_t) > 0.25:
             self.current_pan += delta_p
             self.current_tilt += delta_t
             self._write_angles(self.current_pan, self.current_tilt)
@@ -187,7 +185,7 @@ class PanTiltTracker:
         return self.current_pan, self.current_tilt
 
     def step_scan(self):
-        """Smoothly and slowly scans the room back and forth without jerking."""
+        """Smooth and gentle sweep search pattern."""
         delta = self.scan_direction * self.scan_speed
         self.current_pan += delta
 
@@ -203,7 +201,7 @@ class PanTiltTracker:
         return self.current_pan, self.current_tilt
 
     def set_direct(self, pan_deg, tilt_deg):
-        """Commands exact safe angles."""
+        """Commands specific angles safely."""
         self.current_pan = max(self.pan_min, min(self.pan_max, pan_deg))
         self.current_tilt = max(self.tilt_min, min(self.tilt_max, tilt_deg))
         self._write_angles(self.current_pan, self.current_tilt)
