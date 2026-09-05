@@ -26,7 +26,7 @@ The robot stays stationary, tracks your face as you move around the room, locks 
 
 | Servo | Wire Color | Connects to Raspberry Pi Pin | Description |
 | :--- | :--- | :--- | :--- |
-| **Pan (Horizontal)** | Orange / Yellow (Signal) | **GPIO 18** (Physical Pin 12) | Hardware-timed PWM |
+| **Pan (Horizontal)** | Orange / Yellow (Signal) | **GPIO 12** (Physical Pin 32) | Hardware-timed PWM |
 | | Red (VCC) | **5V** (External 5V or Pin 2/4) | Servo Power |
 | | Brown / Black (GND) | **GND** (Physical Pin 6 or 14) | Common Ground |
 | **Tilt (Vertical)** | Orange / Yellow (Signal) | **GPIO 13** (Physical Pin 33) | Hardware-timed PWM |
@@ -128,3 +128,4 @@ python3 pi_tracker.py
 | **`TRACKING`** | Moves Pan & Tilt to center target | Pupils dynamically gaze toward your face coordinates |
 | **`LOCKED`** | Holds position steadily | Cute happy arcs (`^ ^`) with pink blush lines |
 | **`FACE GONE`** | Pauses 1.5s then resumes sweep | Eyes open wide questioning before scanning |
+

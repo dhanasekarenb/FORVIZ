@@ -1,11 +1,11 @@
 ﻿"""
 Raspberry Pi 4 AI Face Tracker with Dual SG90 Servos & SSD1306 OLED Expressive Eyes
 ===================================================================================
-All-In-One Self-Contained Script.
-Dependencies:
-  - opencv, numpy, picamera2 (Vision)
-  - gpiozero, pigpio (SG90 Servos on GPIO 18 & 13)
-  - Pillow, luma.oled (SSD1306 128x64 OLED Animated Eyes)
+All-In-One Self-Contained Script (Anti-Overheat, Jitter-Free Edition).
+Pinout:
+  - Pan Servo (Yaw):   GPIO 12 (Physical Pin 32)
+  - Tilt Servo (Pitch): GPIO 13 (Physical Pin 33)
+  - OLED Display:      SDA = GPIO 2 (Pin 3), SCL = GPIO 3 (Pin 5), 3.3V, GND
 """
 
 import cv2
@@ -29,6 +29,12 @@ try:
     PICAM2_AVAILABLE = True
 except ImportError:
     PICAM2_AVAILABLE = False
+
+try:
+    import pigpio
+    PIGPIO_AVAILABLE = True
+except ImportError:
+    PIGPIO_AVAILABLE = False
 
 try:
     from gpiozero import AngularServo
@@ -137,104 +143,157 @@ class FaceDetectorYuNet:
 
 
 # ---------------------------------------------------------------------------
-# 4. SERVO CONTROLLER (SG90 PAN & TILT)
+# 4. ANTI-OVERHEAT, SMOOTH SERVO CONTROLLER (SG90 PAN & TILT)
 # ---------------------------------------------------------------------------
-class DummyServo:
-    def __init__(self, name):
-        self.name = name
-        self.angle = 90.0
-
-    def set_angle(self, angle):
-        self.angle = angle
-
-    def close(self):
-        pass
-
-
 class PanTiltTracker:
-    """Controls Pan (GPIO 18) and Tilt (GPIO 13) SG90 servos with auto-sweep."""
-    def __init__(self, pan_pin=18, tilt_pin=13, use_hardware_pwm=True,
-                 pan_range=(0, 180), tilt_range=(35, 145),
-                 pan_center=90, tilt_center=90):
+    """
+    Smooth, anti-overheat servo controller.
+    Pan: GPIO 12 (Pin 32), Tilt: GPIO 13 (Pin 33)
+    """
+    def __init__(self, pan_pin=12, tilt_pin=13,
+                 pan_range=(20, 160), tilt_range=(45, 135),
+                 pan_center=90, tilt_center=90,
+                 max_speed_deg=1.8, idle_timeout_sec=0.7):
         self.pan_pin = pan_pin
         self.tilt_pin = tilt_pin
         self.pan_min, self.pan_max = pan_range
         self.tilt_min, self.tilt_max = tilt_range
-        
+        self.max_speed_deg = max_speed_deg
+        self.idle_timeout_sec = idle_timeout_sec
+
         self.current_pan = float(pan_center)
         self.current_tilt = float(tilt_center)
         self.target_pan = float(pan_center)
         self.target_tilt = float(tilt_center)
 
+        # Safe pulse width bounds for SG90 (prevents mechanical gear stall)
+        self.min_us = 600
+        self.max_us = 2300
+
+        self.last_move_time = time.time()
+        self.is_sleeping = False
+        self.backend = "DUMMY"
+        self.pi = None
+        self.pan_servo = None
+        self.tilt_servo = None
+
         self.scan_direction = 1
-        self.scan_speed = 1.2
-        self.last_face_time = time.time()
-        self.scan_delay_sec = 1.5
+        self.scan_speed = 0.8
 
-        self.hardware_active = False
+        # 1. Native pigpio Hardware DMA (Best, zero jitter)
+        if PIGPIO_AVAILABLE:
+            try:
+                self.pi = pigpio.pi()
+                if self.pi.connected:
+                    self.backend = "PIGPIO"
+                    print(f"[SERVOS] Connected to pigpio daemon (Hardware DMA PWM active).")
+                    print(f"[SERVOS] Pan = GPIO {pan_pin} (Pin 32), Tilt = GPIO {tilt_pin} (Pin 33)")
+                else:
+                    self.pi = None
+            except Exception:
+                self.pi = None
 
-        if GPIOZERO_AVAILABLE:
+        # 2. Fallback gpiozero
+        if self.backend == "DUMMY" and GPIOZERO_AVAILABLE:
             try:
                 factory = None
-                if use_hardware_pwm:
-                    try:
-                        factory = PiGPIOFactory()
-                    except Exception:
-                        factory = None
+                try:
+                    factory = PiGPIOFactory()
+                except Exception:
+                    pass
 
                 self.pan_servo = AngularServo(
-                    self.pan_pin,
-                    min_angle=0, max_angle=180,
-                    min_pulse_width=0.0005, max_pulse_width=0.0024,
+                    self.pan_pin, min_angle=0, max_angle=180,
+                    min_pulse_width=0.0006, max_pulse_width=0.0023,
                     pin_factory=factory
                 )
                 self.tilt_servo = AngularServo(
-                    self.tilt_pin,
-                    min_angle=0, max_angle=180,
-                    min_pulse_width=0.0005, max_pulse_width=0.0024,
+                    self.tilt_pin, min_angle=0, max_angle=180,
+                    min_pulse_width=0.0006, max_pulse_width=0.0023,
                     pin_factory=factory
                 )
-                self.hardware_active = True
-                self.pan_servo.angle = self.current_pan
-                self.tilt_servo.angle = self.current_tilt
-                print(f"[SERVOS] Active: Pan(GPIO {pan_pin}), Tilt(GPIO {tilt_pin})")
+                self.backend = "GPIOZERO"
+                print(f"[SERVOS] Initialized via gpiozero (Pan: GPIO {pan_pin}, Tilt: GPIO {tilt_pin})")
             except Exception as e:
-                print(f"[SERVOS WARNING] Init failed ({e}). Running in simulation mode.")
-                self.pan_servo = DummyServo("PAN")
-                self.tilt_servo = DummyServo("TILT")
+                print(f"[SERVOS WARNING] gpiozero init failed ({e}).")
+
+        if self.backend == "DUMMY":
+            print("[SERVOS INFO] No physical GPIO driver available. Running in dummy simulation.")
+
+        self._write_angles(self.current_pan, self.current_tilt)
+
+    def angle_to_us(self, angle_deg):
+        clamped = max(0.0, min(180.0, angle_deg))
+        return int(self.min_us + (clamped / 180.0) * (self.max_us - self.min_us))
+
+    def _write_angles(self, pan_deg, tilt_deg):
+        self.is_sleeping = False
+        self.last_move_time = time.time()
+
+        if self.backend == "PIGPIO" and self.pi is not None:
+            pan_us = self.angle_to_us(pan_deg)
+            tilt_us = self.angle_to_us(tilt_deg)
+            self.pi.set_servo_pulsewidth(self.pan_pin, pan_us)
+            self.pi.set_servo_pulsewidth(self.tilt_pin, tilt_us)
+
+        elif self.backend == "GPIOZERO" and self.pan_servo is not None:
+            try:
+                self.pan_servo.angle = pan_deg
+                self.tilt_servo.angle = tilt_deg
+            except Exception:
+                pass
+
+    def sleep_idle(self):
+        """ANTI-OVERHEAT: Detach PWM signal when stationary so motor stays cool."""
+        if self.is_sleeping:
+            return
+        if (time.time() - self.last_move_time) > self.idle_timeout_sec:
+            if self.backend == "PIGPIO" and self.pi is not None:
+                self.pi.set_servo_pulsewidth(self.pan_pin, 0)
+                self.pi.set_servo_pulsewidth(self.tilt_pin, 0)
+            elif self.backend == "GPIOZERO" and self.pan_servo is not None:
+                try:
+                    self.pan_servo.detach()
+                    self.tilt_servo.detach()
+                except Exception:
+                    pass
+            self.is_sleeping = True
+
+    def track_face(self, target_cx, target_cy, frame_w=640, frame_h=480, deadband=0.08):
+        norm_dx = (target_cx - (frame_w / 2.0)) / (frame_w / 2.0)
+        norm_dy = (target_cy - (frame_h / 2.0)) / (frame_h / 2.0)
+
+        # Center deadband to stop twitching
+        if abs(norm_dx) < deadband and abs(norm_dy) < deadband:
+            self.sleep_idle()
+            return self.current_pan, self.current_tilt
+
+        step_pan = -norm_dx * 2.8
+        step_tilt = norm_dy * 2.0
+
+        self.target_pan = max(self.pan_min, min(self.pan_max, self.current_pan + step_pan))
+        self.target_tilt = max(self.tilt_min, min(self.tilt_max, self.current_tilt + step_tilt))
+
+        # Slew-rate limiter prevents erratic violent jumps
+        delta_p = self.target_pan - self.current_pan
+        delta_t = self.target_tilt - self.current_tilt
+
+        delta_p = max(-self.max_speed_deg, min(self.max_speed_deg, delta_p))
+        delta_t = max(-self.max_speed_deg, min(self.max_speed_deg, delta_t))
+
+        if abs(delta_p) > 0.3 or abs(delta_t) > 0.3:
+            self.current_pan += delta_p
+            self.current_tilt += delta_t
+            self._write_angles(self.current_pan, self.current_tilt)
         else:
-            print("[SERVOS INFO] 'gpiozero' not installed. Running in simulation mode.")
-            self.pan_servo = DummyServo("PAN")
-            self.tilt_servo = DummyServo("TILT")
+            self.sleep_idle()
 
-    def track_face(self, target_cx, target_cy, frame_width=640, frame_height=480, smoothing=0.18):
-        self.last_face_time = time.time()
-        norm_dx = (target_cx - (frame_width / 2.0)) / (frame_width / 2.0)
-        norm_dy = (target_cy - (frame_height / 2.0)) / (frame_height / 2.0)
-
-        deadband = 0.06
-        if abs(norm_dx) < deadband:
-            norm_dx = 0.0
-        if abs(norm_dy) < deadband:
-            norm_dy = 0.0
-
-        pan_step = -norm_dx * 3.5
-        tilt_step = norm_dy * 2.8
-
-        self.target_pan = max(self.pan_min, min(self.pan_max, self.current_pan + pan_step))
-        self.target_tilt = max(self.tilt_min, min(self.tilt_max, self.current_tilt + tilt_step))
-
-        self.current_pan += (self.target_pan - self.current_pan) * smoothing
-        self.current_tilt += (self.target_tilt - self.current_tilt) * smoothing
-
-        self._apply_angles()
         return self.current_pan, self.current_tilt
 
     def step_scan(self):
-        if (time.time() - self.last_face_time) < self.scan_delay_sec:
-            return self.current_pan, self.current_tilt
+        delta = self.scan_direction * self.scan_speed
+        self.current_pan += delta
 
-        self.current_pan += self.scan_direction * self.scan_speed
         if self.current_pan >= self.pan_max:
             self.current_pan = self.pan_max
             self.scan_direction = -1
@@ -243,32 +302,27 @@ class PanTiltTracker:
             self.scan_direction = 1
 
         self.current_tilt = 85.0
-        self._apply_angles()
+        self._write_angles(self.current_pan, self.current_tilt)
         return self.current_pan, self.current_tilt
 
     def set_direct(self, pan_deg, tilt_deg):
         self.current_pan = max(self.pan_min, min(self.pan_max, pan_deg))
         self.current_tilt = max(self.tilt_min, min(self.tilt_max, tilt_deg))
-        self._apply_angles()
-
-    def _apply_angles(self):
-        if self.hardware_active:
-            try:
-                self.pan_servo.angle = self.current_pan
-                self.tilt_servo.angle = self.current_tilt
-            except Exception:
-                pass
+        self._write_angles(self.current_pan, self.current_tilt)
 
     def center(self):
         self.set_direct(90, 90)
 
     def close(self):
-        if self.hardware_active:
-            try:
+        if self.backend == "PIGPIO" and self.pi is not None:
+            self.pi.set_servo_pulsewidth(self.pan_pin, 0)
+            self.pi.set_servo_pulsewidth(self.tilt_pin, 0)
+            self.pi.stop()
+        elif self.backend == "GPIOZERO":
+            if self.pan_servo:
                 self.pan_servo.close()
+            if self.tilt_servo:
                 self.tilt_servo.close()
-            except Exception:
-                pass
 
 
 # ---------------------------------------------------------------------------
@@ -480,8 +534,8 @@ def main():
     parser.add_argument("--no-servo", action="store_true", help="Disable physical servo hardware")
     parser.add_argument("--no-oled", action="store_true", help="Disable physical OLED hardware")
     parser.add_argument("--dual-oled", action="store_true", help="Enable 2x OLED screen mode")
-    parser.add_argument("--pan-pin", type=int, default=18, help="GPIO pin for Pan servo (default: 18)")
-    parser.add_argument("--tilt-pin", type=int, default=13, help="GPIO pin for Tilt servo (default: 13)")
+    parser.add_argument("--pan-pin", type=int, default=12, help="GPIO pin for Pan servo (default: 12, Pin 32)")
+    parser.add_argument("--tilt-pin", type=int, default=13, help="GPIO pin for Tilt servo (default: 13, Pin 33)")
     args = parser.parse_args()
 
     print("=" * 65)
