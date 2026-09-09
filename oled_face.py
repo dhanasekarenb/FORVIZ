@@ -104,6 +104,20 @@ class RobotEyesRenderer:
             draw.ellipse([dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r], fill=1)
 
 
+def parse_rotation(val):
+    if val is None:
+        return 0
+    if val in (0, 360):
+        return 0
+    if val in (1, 90):
+        return 1
+    if val in (2, 180):
+        return 2
+    if val in (3, 270):
+        return 3
+    return 0
+
+
 class OLEDDisplayController:
     """Discover up to two SSD1306 displays and animate without blocking vision.
 
@@ -112,7 +126,8 @@ class OLEDDisplayController:
     while its surviving partner continues in single-screen mode.
     """
     def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C,
-                 port_2=None, addr_2=None, *, hardware=True):
+                 port_2=None, addr_2=None, *, hardware=True,
+                 rotate=0, rotate_1=None, rotate_2=None):
         if (port_2 is None) != (addr_2 is None):
             raise ValueError('Specify both port_2 and addr_2, or neither')
         self.renderer = RobotEyesRenderer(128, 64)
@@ -128,6 +143,10 @@ class OLEDDisplayController:
             print('[OLED] No physical display output.')
             return
 
+        r1 = parse_rotation(rotate if rotate_1 is None else rotate_1)
+        r2 = parse_rotation(rotate if rotate_2 is None else rotate_2)
+        rotations = [r1, r2]
+
         candidates = [(port_1, addr_1)]
         candidates += ([(port_2, addr_2)] if port_2 is not None else
                        [(1, 0x3D), (3, 0x3C), (3, 0x3D), (6, 0x3C)])
@@ -135,8 +154,9 @@ class OLEDDisplayController:
         for port, address in dict.fromkeys(candidates):
             serial = None
             try:
+                rot = rotations[len(devices)] if len(devices) < len(rotations) else r1
                 serial = i2c(port=port, address=address)
-                device = ssd1306(serial)
+                device = ssd1306(serial, rotate=rot) if rot else ssd1306(serial)
             except Exception:
                 if serial is not None:
                     try:
@@ -145,7 +165,9 @@ class OLEDDisplayController:
                         pass
                 continue
             devices.append(device)
-            print(f'[OLED] Display detected on bus {port}, address 0x{address:X}')
+            rot_deg = rot * 90
+            print(f'[OLED] Display detected on bus {port}, address 0x{address:X}' +
+                  (f' (rotated {rot_deg} deg)' if rot_deg else ''))
             if len(devices) >= (1 if dual_screen is False else 2):
                 break
         if devices:

@@ -209,6 +209,12 @@ def parse_args(argv=None):
     oled = parser.add_mutually_exclusive_group()
     oled.add_argument('--dual-oled', action='store_true', help='Request two OLEDs; fall back to available screens')
     oled.add_argument('--single-oled', action='store_true', help='Use one OLED, rendering both eyes on it')
+    parser.add_argument('--oled-rotate', type=int, default=0, choices=[0, 90, 180, 270],
+                        help='Rotate all OLED displays (0, 90, 180, or 270 degrees)')
+    parser.add_argument('--oled1-rotate', type=int, default=None, choices=[0, 90, 180, 270],
+                        help='Rotate screen 1 specifically (0, 90, 180, or 270 degrees)')
+    parser.add_argument('--oled2-rotate', type=int, default=None, choices=[0, 90, 180, 270],
+                        help='Rotate screen 2 specifically (0, 90, 180, or 270 degrees)')
     display = parser.add_mutually_exclusive_group()
     display.add_argument('--headless', action='store_true', help='Disable OpenCV preview')
     display.add_argument('--preview', action='store_true', help='Request OpenCV preview on a desktop')
@@ -266,7 +272,12 @@ def main(argv=None):
             idle_timeout_sec=args.idle_detach_after, hardware=not args.no_servo)
         if not args.no_oled:
             mode = False if args.single_oled else (True if args.dual_oled else None)
-            face_display = OLEDDisplayController(dual_screen=mode)
+            face_display = OLEDDisplayController(
+                dual_screen=mode,
+                rotate=args.oled_rotate,
+                rotate_1=args.oled1_rotate,
+                rotate_2=args.oled2_rotate,
+            )
             face_display.start()
         state = FaceTrackingState(face_loss_sec=args.face_loss_sec)
         prev_time, last_telemetry = time.monotonic(), 0.0

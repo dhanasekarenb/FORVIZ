@@ -271,5 +271,38 @@ class IntegrationTests(unittest.TestCase):
         servo.center.assert_not_called()
 
 
+    def test_oled_rotation_cli_args(self):
+        args = pi_tracker.parse_args(['--oled-rotate', '180'])
+        self.assertEqual(args.oled_rotate, 180)
+        self.assertIsNone(args.oled1_rotate)
+        self.assertIsNone(args.oled2_rotate)
+
+        args = pi_tracker.parse_args(['--oled1-rotate', '90', '--oled2-rotate', '270'])
+        self.assertEqual(args.oled1_rotate, 90)
+        self.assertEqual(args.oled2_rotate, 270)
+
+    def test_oled_rotation_mapping_and_device_init(self):
+        self.assertEqual(oled_face.parse_rotation(0), 0)
+        self.assertEqual(oled_face.parse_rotation(90), 1)
+        self.assertEqual(oled_face.parse_rotation(180), 2)
+        self.assertEqual(oled_face.parse_rotation(270), 3)
+        self.assertEqual(oled_face.parse_rotation(2), 2)
+
+        created_rotations = []
+        def mock_ssd1306(serial, rotate=0):
+            created_rotations.append(rotate)
+            return serial
+
+        with (patch.object(oled_face, 'LUMA_AVAILABLE', True),
+              patch.object(oled_face, 'i2c', side_effect=lambda port, address: Mock(), create=True),
+              patch.object(oled_face, 'ssd1306', side_effect=mock_ssd1306, create=True),
+              contextlib.redirect_stdout(io.StringIO())):
+            ctrl = oled_face.OLEDDisplayController(port_1=1, addr_1=0x3C, port_2=3, addr_2=0x3C,
+                                                   rotate_1=180, rotate_2=90)
+            ctrl.stop()
+        self.assertEqual(created_rotations, [2, 1])
+
+
+
 if __name__ == '__main__':
     unittest.main()
