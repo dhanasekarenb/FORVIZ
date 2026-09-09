@@ -184,7 +184,7 @@ class FaceTrackingState:
         gx = (self.smooth_cx - width / 2.0) / (width / 2.0)
         gy = (self.smooth_cy - height / 2.0) / (height / 2.0)
         self.gaze_x = -gx if invert_gaze_x else gx
-        self.gaze_y = -gy if invert_gaze_y else gy
+        self.gaze_y = gy if invert_gaze_y else -gy
         if abs(self.gaze_x) <= self.deadband and abs(self.gaze_y) <= self.deadband:
             self.state_name = 'LOCKED'
             if self.lock_start_time is None:

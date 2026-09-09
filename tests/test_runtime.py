@@ -184,9 +184,14 @@ class StateTests(unittest.TestCase):
         state.update([face_at(x=200)], 640, 480, 2.1)
         self.assertEqual(state.smooth_cx, 200)
         # Test inverted gaze
-        state.update([face_at(x=500, y=100)], 640, 480, 2.2, invert_gaze_x=True, invert_gaze_y=True)
-        self.assertLess(state.gaze_x, 0)
+        # By default at 0 deg, face at top (y=100 < 240) makes pupil gaze UP (> 0)
+        state.update([face_at(x=500, y=100)], 640, 480, 2.2)
+        self.assertGreater(state.gaze_x, 0)
         self.assertGreater(state.gaze_y, 0)
+        # Inverted gaze flips it
+        state.update([face_at(x=500, y=100)], 640, 480, 2.3, invert_gaze_x=True, invert_gaze_y=True)
+        self.assertLess(state.gaze_x, 0)
+        self.assertLess(state.gaze_y, 0)
 
 
 class DisplayTests(unittest.TestCase):
