@@ -29,7 +29,8 @@ class PanTiltTracker:
                  pan_center=90, tilt_center=90,
                  max_speed_deg=None, idle_timeout_sec=None, *,
                  max_speed_deg_per_sec=36.0, scan_speed_deg_per_sec=18.0,
-                 hardware=True, clock=None):
+                 hardware=True, clock=None,
+                 invert_pan=False, invert_tilt=False):
         self.pan_min, self.pan_max = self._validate_range(pan_range)
         self.tilt_min, self.tilt_max = self._validate_range(tilt_range)
         for center, low, high in ((pan_center, self.pan_min, self.pan_max),
@@ -55,6 +56,8 @@ class PanTiltTracker:
         self._last_update = self.last_move_time = self._clock()
         self.is_sleeping = self._closed = False
         self.scan_direction = 1
+        self.invert_pan = invert_pan
+        self.invert_tilt = invert_tilt
         self.backend = 'DUMMY'
         self.pi = self.pan_servo = self.tilt_servo = self._factory = None
         if hardware:
@@ -159,8 +162,10 @@ class PanTiltTracker:
         dt = self._elapsed()
         dx = (target_cx - frame_w / 2.0) / (frame_w / 2.0)
         dy = (target_cy - frame_h / 2.0) / (frame_h / 2.0)
-        pan_velocity = 0.0 if abs(dx) <= deadband else -dx * 75.0
-        tilt_velocity = 0.0 if abs(dy) <= deadband else dy * 60.0
+        pan_sign = 1.0 if self.invert_pan else -1.0
+        tilt_sign = -1.0 if self.invert_tilt else 1.0
+        pan_velocity = 0.0 if abs(dx) <= deadband else pan_sign * dx * 75.0
+        tilt_velocity = 0.0 if abs(dy) <= deadband else tilt_sign * dy * 60.0
         limit = self.max_speed_deg_per_sec
         return self._move(
             self.current_pan + max(-limit, min(limit, pan_velocity)) * dt,

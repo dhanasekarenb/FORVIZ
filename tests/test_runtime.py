@@ -64,6 +64,16 @@ class ServoTests(unittest.TestCase):
         self.assertLess(tracker.current_pan, 90)
         self.assertEqual(tracker.current_tilt, 90)
 
+    def test_inverted_tilt_and_pan_direction(self):
+        tracker, clock = self.tracker(invert_pan=True, invert_tilt=True)
+        clock.advance(0.1)
+        # Target to the right (400 > 320) and down (350 > 240)
+        tracker.track_face(400, 350)
+        # Normally pan would decrease (-dx), but with invert_pan it increases
+        self.assertGreater(tracker.current_pan, 90)
+        # Normally tilt would increase (+dy), but with invert_tilt it decreases
+        self.assertLess(tracker.current_tilt, 90)
+
     def test_deadband_is_independent_per_axis(self):
         tracker, clock = self.tracker()
         clock.advance(0.1)
@@ -173,6 +183,10 @@ class StateTests(unittest.TestCase):
         state.update([], 640, 480, 2)
         state.update([face_at(x=200)], 640, 480, 2.1)
         self.assertEqual(state.smooth_cx, 200)
+        # Test inverted gaze
+        state.update([face_at(x=500, y=100)], 640, 480, 2.2, invert_gaze_x=True, invert_gaze_y=True)
+        self.assertLess(state.gaze_x, 0)
+        self.assertGreater(state.gaze_y, 0)
 
 
 class DisplayTests(unittest.TestCase):

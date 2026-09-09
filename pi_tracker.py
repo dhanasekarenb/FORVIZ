@@ -156,7 +156,7 @@ class FaceTrackingState:
         self.state_name, self.mood = 'SCANNING', 'NEUTRAL'
         self.gaze_x = self.gaze_y = 0.0
 
-    def update(self, faces, width, height, now):
+    def update(self, faces, width, height, now, invert_gaze_x=False, invert_gaze_y=False):
         dt = 1.0 / 30.0 if self.last_update is None else max(0.0, now - self.last_update)
         self.last_update = now
         self.mood = 'NEUTRAL'
@@ -181,8 +181,10 @@ class FaceTrackingState:
             self.smooth_cx += alpha * (raw_x - self.smooth_cx)
             self.smooth_cy += alpha * (raw_y - self.smooth_cy)
         self.last_seen = now
-        self.gaze_x = (self.smooth_cx - width / 2.0) / (width / 2.0)
-        self.gaze_y = (self.smooth_cy - height / 2.0) / (height / 2.0)
+        gx = (self.smooth_cx - width / 2.0) / (width / 2.0)
+        gy = (self.smooth_cy - height / 2.0) / (height / 2.0)
+        self.gaze_x = -gx if invert_gaze_x else gx
+        self.gaze_y = -gy if invert_gaze_y else gy
         if abs(self.gaze_x) <= self.deadband and abs(self.gaze_y) <= self.deadband:
             self.state_name = 'LOCKED'
             if self.lock_start_time is None:
@@ -226,6 +228,11 @@ def parse_args(argv=None):
     parser.add_argument('--pan-max', type=float, default=140)
     parser.add_argument('--tilt-min', type=float, default=65)
     parser.add_argument('--tilt-max', type=float, default=115)
+    parser.add_argument('--invert-tilt', action='store_true', help='Invert vertical tilt servo (Up <-> Down)')
+    parser.add_argument('--invert-pan', action='store_true', help='Invert horizontal pan servo (Left <-> Right)')
+    parser.add_argument('--invert-gaze-y', action='store_true', help='Invert eye pupil vertical gaze')
+    parser.add_argument('--invert-gaze-x', action='store_true', help='Invert eye pupil horizontal gaze')
+    parser.add_argument('--invert-y', action='store_true', help='Invert both vertical tilt servo and eye gaze')
     parser.add_argument('--pan-center', type=float, default=90)
     parser.add_argument('--tilt-center', type=float, default=90)
     parser.add_argument('--servo-speed', type=float, default=36, help='Maximum servo speed in degrees/second')
@@ -265,12 +272,18 @@ def main(argv=None):
     try:
         detector = FaceDetectorYuNet(args.model)
         camera = PiCameraStream(width=640, height=480, fps=30)
+        invert_tilt = args.invert_tilt or args.invert_y
+        invert_pan = args.invert_pan
+        invert_gaze_y = args.invert_gaze_y or args.invert_y
+        invert_gaze_x = args.invert_gaze_x
+
         tracker = PanTiltTracker(
             pan_pin=args.pan_pin, tilt_pin=args.tilt_pin,
             pan_range=(args.pan_min, args.pan_max), tilt_range=(args.tilt_min, args.tilt_max),
             pan_center=args.pan_center, tilt_center=args.tilt_center,
             max_speed_deg_per_sec=args.servo_speed, scan_speed_deg_per_sec=args.scan_speed,
-            idle_timeout_sec=args.idle_detach_after, hardware=not args.no_servo)
+            idle_timeout_sec=args.idle_detach_after, hardware=not args.no_servo,
+            invert_pan=invert_pan, invert_tilt=invert_tilt)
         if not args.no_oled:
             mode = False if args.single_oled else (True if args.dual_oled else None)
             face_display = OLEDDisplayController(
@@ -295,7 +308,7 @@ def main(argv=None):
             dt, prev_time = now - prev_time, now
             if dt > 0:
                 fps = 0.85 * fps + 0.15 / dt if fps > 0 else 1.0 / dt
-            primary_face = state.update(faces, width, height, now)
+            primary_face = state.update(faces, width, height, now, invert_gaze_x=invert_gaze_x, invert_gaze_y=invert_gaze_y)
             if primary_face is not None:
                 pan, tilt = tracker.track_face(state.smooth_cx, state.smooth_cy, width, height, state.deadband)
             elif state.state_name == 'HOLDING':
