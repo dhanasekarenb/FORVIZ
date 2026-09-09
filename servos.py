@@ -154,7 +154,8 @@ class PanTiltTracker:
             self.sleep_idle()
         return self.current_pan, self.current_tilt
 
-    def track_face(self, target_cx, target_cy, frame_w=640, frame_h=480, deadband=0.08):
+    def track_face(self, target_cx, target_cy, frame_w=640, frame_h=480, deadband=0.08,
+                   gain_pan=None, gain_tilt=None):
         """Proportional velocity control with the same deadband used by face lock."""
         if (not all(math.isfinite(v) for v in (target_cx, target_cy, frame_w, frame_h, deadband))
                 or frame_w <= 0 or frame_h <= 0 or not 0 <= deadband < 1):
@@ -164,8 +165,10 @@ class PanTiltTracker:
         dy = (target_cy - frame_h / 2.0) / (frame_h / 2.0)
         pan_sign = 1.0 if self.invert_pan else -1.0
         tilt_sign = -1.0 if self.invert_tilt else 1.0
-        pan_velocity = 0.0 if abs(dx) <= deadband else pan_sign * dx * 75.0
-        tilt_velocity = 0.0 if abs(dy) <= deadband else tilt_sign * dy * 60.0
+        gp = 75.0 if gain_pan is None else gain_pan
+        gt = 60.0 if gain_tilt is None else gain_tilt
+        pan_velocity = 0.0 if abs(dx) <= deadband else pan_sign * dx * gp
+        tilt_velocity = 0.0 if abs(dy) <= deadband else tilt_sign * dy * gt
         limit = self.max_speed_deg_per_sec
         return self._move(
             self.current_pan + max(-limit, min(limit, pan_velocity)) * dt,

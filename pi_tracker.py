@@ -177,7 +177,7 @@ class FaceTrackingState:
             self.smooth_cx, self.smooth_cy = raw_x, raw_y
         else:
             # Time-constant smoothing keeps the response comparable at different FPS.
-            alpha = 1.0 - math.exp(-min(dt, 0.1) / 0.08)
+            alpha = 1.0 - math.exp(-min(dt, 0.1) / 0.05)
             self.smooth_cx += alpha * (raw_x - self.smooth_cx)
             self.smooth_cy += alpha * (raw_y - self.smooth_cy)
         self.last_seen = now
@@ -235,7 +235,11 @@ def parse_args(argv=None):
     parser.add_argument('--invert-y', action='store_true', help='Invert both vertical tilt servo and eye gaze')
     parser.add_argument('--pan-center', type=float, default=90)
     parser.add_argument('--tilt-center', type=float, default=90)
-    parser.add_argument('--servo-speed', type=float, default=36, help='Maximum servo speed in degrees/second')
+    parser.add_argument('--servo-speed', type=float, default=90, help='Maximum servo speed in degrees/second (faster, responsive)')
+    parser.add_argument('--gain-pan', type=float, default=120.0, help='Pan tracking sensitivity')
+    parser.add_argument('--gain-tilt', type=float, default=95.0, help='Tilt tracking sensitivity')
+    parser.add_argument('--reverse-pan', action='store_true', help='Reverse horizontal pan servo direction')
+    parser.add_argument('--reverse-tilt', action='store_true', help='Reverse vertical tilt servo direction')
     parser.add_argument('--scan-speed', type=float, default=18, help='Pan scan speed in degrees/second')
     parser.add_argument('--face-loss-sec', type=float, default=1.5, help='Hold position before resuming scan')
     parser.add_argument('--idle-detach-after', type=float, default=None,
@@ -272,8 +276,10 @@ def main(argv=None):
     try:
         detector = FaceDetectorYuNet(args.model)
         camera = PiCameraStream(width=640, height=480, fps=30)
-        invert_tilt = args.invert_tilt or args.invert_y
-        invert_pan = args.invert_pan
+        # Defaults are inverted to match the physical Pan/Tilt gimbal assembly:
+        # Face UP -> Head UP, Face DOWN -> Head DOWN, Face LEFT -> Head LEFT, Face RIGHT -> Head RIGHT
+        invert_tilt = False if args.reverse_tilt else True
+        invert_pan = False if args.reverse_pan else True
         invert_gaze_y = args.invert_gaze_y or args.invert_y
         invert_gaze_x = args.invert_gaze_x
 
@@ -310,7 +316,7 @@ def main(argv=None):
                 fps = 0.85 * fps + 0.15 / dt if fps > 0 else 1.0 / dt
             primary_face = state.update(faces, width, height, now, invert_gaze_x=invert_gaze_x, invert_gaze_y=invert_gaze_y)
             if primary_face is not None:
-                pan, tilt = tracker.track_face(state.smooth_cx, state.smooth_cy, width, height, state.deadband)
+                pan, tilt = tracker.track_face(state.smooth_cx, state.smooth_cy, width, height, state.deadband, gain_pan=args.gain_pan, gain_tilt=args.gain_tilt)
             elif state.state_name == 'HOLDING':
                 pan, tilt = tracker.hold()
             else:
