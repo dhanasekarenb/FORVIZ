@@ -225,11 +225,19 @@ class DisplayTests(unittest.TestCase):
         self.assertFalse(controller.running)
         devices[(1, 0x3C)].cleanup.assert_called_once()
 
+    def test_single_eye_mode_renders_one_big_eye(self):
+        controller, devices = self.controller([(1, 0x3C)], single_eye=True)
+        controller._display_frame(0)
+        devices[(1, 0x3C)].display.assert_called_once()
+        frame = devices[(1, 0x3C)].display.call_args[0][0]
+        self.assertEqual(frame.size, (128, 64))
+
     def test_eye_rendering_variants(self):
         renderer = oled_face.RobotEyesRenderer()
         for mood in ('NEUTRAL', 'HAPPY', 'HEART'):
             for blink in (0, 0.5, 1):
                 for image in (renderer.render_single_screen(mood, -1, 1, blink),
+                              renderer.render_single_eye(mood, 0, 0, blink),
                               *renderer.render_dual_screen(mood, 1, -1, blink)):
                     self.assertEqual(image.size, (128, 64))
                     self.assertEqual(image.mode, '1')

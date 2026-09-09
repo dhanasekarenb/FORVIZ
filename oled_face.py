@@ -43,6 +43,19 @@ class RobotEyesRenderer:
         self._draw_eye(draw, right_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=False)
         return image
 
+    def render_single_eye(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
+        """Renders ONE big centered eye (64x50) filling the 128x64 display.
+        
+        Used when dual physical OLEDs share Pin 3 and Pin 5 on address 0x3C without soldering.
+        Both displays receive the exact same big eye and animate in perfect sync.
+        """
+        image = Image.new("1", (self.w, self.h), 0)
+        draw = ImageDraw.Draw(image)
+        eye_w, eye_h = 64, 50
+        cx, cy = self.w // 2, self.h // 2
+        self._draw_eye(draw, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
+        return image
+
     def render_dual_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
         """Renders dedicated Left and Right eye images for TWO independent 128x64 displays."""
         img_left = Image.new("1", (self.w, self.h), 0)
@@ -127,10 +140,11 @@ class OLEDDisplayController:
     """
     def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C,
                  port_2=None, addr_2=None, *, hardware=True,
-                 rotate=0, rotate_1=None, rotate_2=None):
+                 rotate=0, rotate_1=None, rotate_2=None, single_eye=False):
         if (port_2 is None) != (addr_2 is None):
             raise ValueError('Specify both port_2 and addr_2, or neither')
         self.renderer = RobotEyesRenderer(128, 64)
+        self.single_eye = single_eye
         self.dev1 = self.dev2 = None
         self.dual_screen = False
         self.current_mood = 'NEUTRAL'
@@ -207,8 +221,12 @@ class OLEDDisplayController:
         with self._expression_lock:
             expression = self.current_mood, self.gaze_x, self.gaze_y, blink_pct
         devices = [device for device in (self.dev1, self.dev2) if device is not None]
-        frames = (self.renderer.render_dual_screen(*expression) if len(devices) == 2 else
-                  [self.renderer.render_single_screen(*expression)])
+        if len(devices) == 2:
+            frames = self.renderer.render_dual_screen(*expression)
+        elif self.single_eye:
+            frames = [self.renderer.render_single_eye(*expression)]
+        else:
+            frames = [self.renderer.render_single_screen(*expression)]
         survivors = []
         for device, frame in zip(devices, frames):
             try:

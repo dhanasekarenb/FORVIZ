@@ -71,15 +71,20 @@ def scan_i2c():
             print(f"  - Screen on Port {p}, Addr 0x{a:X}")
     print("=" * 65)
 
-def run_hardware_demo(dual_mode=None, rotate=0, rotate_1=None, rotate_2=None):
+def run_hardware_demo(dual_mode=None, rotate=0, rotate_1=None, rotate_2=None, single_eye=False):
     print("=" * 65)
     print("        ROBOT OLED EYES EXPRESSION DEMO")
     print("=" * 65)
 
-    face = OLEDDisplayController(dual_screen=dual_mode, rotate=rotate, rotate_1=rotate_1, rotate_2=rotate_2)
+    face = OLEDDisplayController(dual_screen=dual_mode, rotate=rotate, rotate_1=rotate_1, rotate_2=rotate_2, single_eye=single_eye)
     face.start()
 
-    mode_str = "Dual Screens (Left Eye on #1, Right Eye on #2)" if face.dual_screen else "Single Screen (Both eyes on 1 display)"
+    if face.dual_screen:
+        mode_str = "Dual Screens (Left Eye on #1, Right Eye on #2)"
+    elif face.single_eye:
+        mode_str = "Mirrored Single Eye (One big eye duplicated to both physical screens on Pin 3 & Pin 5)"
+    else:
+        mode_str = "Single Screen (Both eyes on 1 display)"
     print(f"Active Mode: {mode_str}")
     print("Running expression cycle...")
     print("=" * 65)
@@ -121,6 +126,8 @@ if __name__ == "__main__":
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dual", action="store_true", help="Request two OLED screens")
     modes.add_argument("--single", action="store_true", help="Use one OLED screen")
+    modes.add_argument("--mirror-eye", "--single-eye", dest="mirror_eye", action="store_true",
+                       help="Render ONE big centered eye for mirrored dual-display on Pin 3 & Pin 5")
     parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
                         help="Rotate all OLED displays (0, 90, 180, 270 deg)")
     parser.add_argument("--rotate1", type=int, default=None, choices=[0, 90, 180, 270],
@@ -133,8 +140,9 @@ if __name__ == "__main__":
         scan_i2c()
     else:
         run_hardware_demo(
-            dual_mode=False if args.single else (True if args.dual else None),
+            dual_mode=False if (args.single or args.mirror_eye) else (True if args.dual else None),
             rotate=args.rotate,
             rotate_1=args.rotate1,
             rotate_2=args.rotate2,
+            single_eye=args.mirror_eye,
         )
