@@ -176,10 +176,15 @@ class FaceTrackingState:
         if self.smooth_cx is None or self.last_seen is None:
             self.smooth_cx, self.smooth_cy = raw_x, raw_y
         else:
-            # Time-constant smoothing keeps the response comparable at different FPS.
-            alpha = 1.0 - math.exp(-min(dt, 0.1) / 0.05)
-            self.smooth_cx += alpha * (raw_x - self.smooth_cx)
-            self.smooth_cy += alpha * (raw_y - self.smooth_cy)
+            # Two-stage adaptive filter: suppresses camera sensor jitter (< 3px)
+            # while providing ultra-smooth, responsive motion for real head movements
+            dist = math.hypot(raw_x - self.smooth_cx, raw_y - self.smooth_cy)
+            if dist > 3.0:
+                factor = min(1.0, dist / 80.0)
+                tc = 0.09 * (1.0 - 0.55 * factor)  # 0.09s for subtle glide, 0.04s for fast tracking
+                alpha = 1.0 - math.exp(-min(dt, 0.1) / tc)
+                self.smooth_cx += alpha * (raw_x - self.smooth_cx)
+                self.smooth_cy += alpha * (raw_y - self.smooth_cy)
         self.last_seen = now
         gx = (self.smooth_cx - width / 2.0) / (width / 2.0)
         gy = (self.smooth_cy - height / 2.0) / (height / 2.0)
@@ -235,9 +240,9 @@ def parse_args(argv=None):
     parser.add_argument('--invert-y', action='store_true', help='Invert both vertical tilt servo and eye gaze')
     parser.add_argument('--pan-center', type=float, default=90)
     parser.add_argument('--tilt-center', type=float, default=90)
-    parser.add_argument('--servo-speed', type=float, default=90, help='Maximum servo speed in degrees/second (faster, responsive)')
-    parser.add_argument('--gain-pan', type=float, default=120.0, help='Pan tracking sensitivity')
-    parser.add_argument('--gain-tilt', type=float, default=95.0, help='Tilt tracking sensitivity')
+    parser.add_argument('--servo-speed', type=float, default=120, help='Maximum servo speed in degrees/second (fast & smooth)')
+    parser.add_argument('--gain-pan', type=float, default=140.0, help='Pan tracking sensitivity')
+    parser.add_argument('--gain-tilt', type=float, default=110.0, help='Tilt tracking sensitivity')
     parser.add_argument('--reverse-pan', action='store_true', help='Reverse horizontal pan servo direction')
     parser.add_argument('--reverse-tilt', action='store_true', help='Reverse vertical tilt servo direction')
     parser.add_argument('--scan-speed', type=float, default=18, help='Pan scan speed in degrees/second')
