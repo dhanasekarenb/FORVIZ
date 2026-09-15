@@ -6,6 +6,7 @@ Usage:
   python3 test_oled.py --scan   # Scans all I2C ports and diagnoses display connections
   python3 test_oled.py --dual   # Requests two screens; falls back if unavailable
   python3 test_oled.py --single # Renders both eyes on one detected screen
+  python3 test_oled.py --mirror-eye # Same-address, same-bus OLEDs show one mirrored eye
 """
 __test__ = False  # Interactive hardware demo, excluded from pytest collection.
 import time
@@ -61,10 +62,11 @@ def scan_i2c():
         print("  SCL -> GPIO 3 (Pin 5)")
     elif len(found) == 1:
         port, addr = found[0]
-        print(f"[STATUS] 1 OLED display detected (Port {port}, Addr 0x{addr:X}).")
-        print("\nTo enable your 2nd OLED display without soldering:")
-        print("  1. Connect Screen 2 to GPIO 23 (Pin 16 - SDA) and GPIO 24 (Pin 18 - SCL).")
-        print("  2. Run: ./enable_dual_oled.sh")
+        print(f"[STATUS] 1 I2C address responded (Port {port}, Addr 0x{addr:X}).")
+        print("A scan cannot count physical OLEDs sharing the same bus and address.")
+        print("If both OLEDs share SDA/SCL and 0x3C, run: python3 test_oled.py --mirror-eye")
+        print("Both screens should show the same centered eye; verify both visually.")
+        print("For independent left/right eyes, use different addresses or separate buses.")
     else:
         print(f"[STATUS] 2 OLED displays detected! Dual Eyes are ready to roll!")
         for p, a in found:
@@ -82,7 +84,7 @@ def run_hardware_demo(dual_mode=None, rotate=0, rotate_1=None, rotate_2=None, si
     if face.dual_screen:
         mode_str = "Dual Screens (Left Eye on #1, Right Eye on #2)"
     elif face.single_eye:
-        mode_str = "Mirrored Single Eye (One big eye duplicated to both physical screens on Pin 3 & Pin 5)"
+        mode_str = "Mirrored Single Eye (same image sent to one I2C address; check both screens visually)"
     else:
         mode_str = "Single Screen (Both eyes on 1 display)"
     print(f"Active Mode: {mode_str}")

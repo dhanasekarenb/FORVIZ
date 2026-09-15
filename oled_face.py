@@ -44,14 +44,14 @@ class RobotEyesRenderer:
         return image
 
     def render_single_eye(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
-        """Renders ONE big centered eye (64x50) filling the 128x64 display.
+        """Renders ONE centered eye spanning the screen with a small border.
         
         Used when dual physical OLEDs share Pin 3 and Pin 5 on address 0x3C without soldering.
         Both displays receive the exact same big eye and animate in perfect sync.
         """
         image = Image.new("1", (self.w, self.h), 0)
         draw = ImageDraw.Draw(image)
-        eye_w, eye_h = 64, 50
+        eye_w, eye_h = self.w - 4, self.h - 4
         cx, cy = self.w // 2, self.h // 2
         self._draw_eye(draw, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
         return image
@@ -63,7 +63,7 @@ class RobotEyesRenderer:
         draw_l = ImageDraw.Draw(img_left)
         draw_r = ImageDraw.Draw(img_right)
 
-        eye_w, eye_h = 64, 50
+        eye_w, eye_h = self.w - 4, self.h - 4
         cx, cy = self.w // 2, self.h // 2
 
         self._draw_eye(draw_l, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
@@ -80,7 +80,8 @@ class RobotEyesRenderer:
             return
 
         if mood == "HEART":
-            r = w // 4
+            # Wide full-screen eyes must not make the heart taller than the panel.
+            r = min(w // 4, h // 2 - 1)
             draw.ellipse([cx - r, cy - r, cx, cy], fill=1)
             draw.ellipse([cx, cy - r, cx + r, cy], fill=1)
             poly = [(cx - r, cy - r // 3), (cx + r, cy - r // 3), (cx, cy + r)]

@@ -159,7 +159,7 @@ Press Ctrl+C in any runtime mode, or Q/Escape in the desktop preview, to stop. S
 | Servo backend is simulation unexpectedly | Check GPIO packages and `systemctl status pigpiod`. On the supported Pi 4 setup, `sudo systemctl start pigpiod` starts the daemon when it is installed. |
 | Servo hums, binds, or the Pi resets | Stop the run. Check physical clearance, load, external servo power, and shared ground before trying again. Detaching PWM is not a substitute for correcting binding. |
 | Camera cannot open | Check the CSI ribbon with power disconnected, camera availability, and whether another process is using it. |
-| Second OLED missing | Check bus-3 wiring/overlay and `python3 test_oled.py --scan`; two `0x3C` displays must not share the same bus. |
+| Second OLED missing | For independent left/right eyes, check bus-3 wiring/overlay and `python3 test_oled.py --scan`; two `0x3C` displays cannot be addressed separately on the same bus. For identical mirrored eyes on both screens, use `--mirror-eye`; a scan sees one address even with two physical screens. |
 | No preview | Use `--preview` on a graphical desktop; use `--headless` over a terminal-only connection. |
 
 ## PC demo and automated checks

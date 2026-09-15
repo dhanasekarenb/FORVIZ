@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FORVIZ / Eye options</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#22252b;background:#f3f1eb}*{box-sizing:border-box}body{margin:0}main{max-width:1150px;margin:auto;padding:32px 24px 45px}header{display:flex;align-items:center;justify-content:space-between;gap:20px}h1{font-size:28px;margin:8px 0}p{color:#62666e;line-height:1.6}small{letter-spacing:.14em;color:#a11e2b}.tag{border:1px solid #ccc7bd;border-radius:30px;padding:9px 14px;font-size:12px;white-space:nowrap}.hero{margin:26px 0;background:white;padding:28px;border:1px solid #dad7d0;border-radius:22px}.pair{display:flex;gap:6%;align-items:center;justify-content:center}.hero .pair{max-width:780px;margin:22px auto 28px;padding:22px;background:#f3f1eb;border-radius:26px}.eye{width:47%;aspect-ratio:2/1;background:black;image-rendering:pixelated;border-radius:8px}.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}button{font:inherit;cursor:pointer;border:1px solid #ccc7bd;background:#fff;color:#22252b;border-radius:9px;padding:9px 15px}button:focus-visible{outline:3px solid #ba1d31;outline-offset:3px}button[aria-pressed=true]{background:#a91c2a;border-color:#a91c2a;color:#fff}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.card{text-align:left;padding:18px;border-radius:14px}.card .pair{margin:17px 0}.card strong{font-size:16px}.card p{font-size:12px;margin:6px 0 0;min-height:38px}.card[aria-pressed=true]{background:#fff;color:#22252b;border:2px solid #a91c2a;padding:17px}.card small{display:block;margin-bottom:5px;font-size:10px}.caption{font-size:12px;margin-bottom:0;text-align:center}h2{margin:0;font-size:22px}#description{margin:5px 0 0}footer{font-size:12px;margin-top:22px;color:#62666e}@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}header{align-items:start;flex-direction:column;gap:3px}.hero{padding:20px 12px}.hero .pair{padding:12px}main{padding:22px 15px}.card{padding:12px}.card[aria-pressed=true]{padding:11px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body><main>
+<header><div><small>FORVIZ / OLED DESIGN STUDY</small><h1>Choose your robot's eyes.</h1></div><span class="tag">Your current eye is preserved</span></header>
+<p>Six styles for your two 128 × 64 OLEDs. Select a style, then try its expressions. This is a separate preview; selecting a style does not install it on the robot.</p>
+<section class="hero" aria-label="Selected eye preview">
+<h2 id="title"></h2><p id="description"></p>
+<div class="pair"><img id="left" class="eye" alt="Left OLED preview"><img id="right" class="eye" alt="Right OLED preview"></div>
+<div class="controls" aria-label="Expression"><button data-mood="neutral" aria-pressed="true">Neutral</button><button data-mood="happy" aria-pressed="false">Happy</button><button data-mood="heart" aria-pressed="false">Hearts</button><button id="animate" aria-pressed="false">Animate gaze &amp; blink</button></div>
+<p class="caption">Same-bus mirror mode: both screens receive identical pixels. Colours on your actual OLED depend on its panel.</p>
+</section>
+<div id="gallery" class="grid" aria-label="Eye styles"></div>
+<footer>Option 1 is rendered directly by your current Python eye renderer. Options 2–6 are preview concepts, drawn as real 1-bit pixels; the heart expression is shared across styles.</footer>
+<script id="eye-data" type="application/json">__EYE_DATA__</script>
+<script>
+(()=>{'use strict';
+const data=JSON.parse(document.getElementById('eye-data').textContent),$=id=>document.getElementById(id);
+let selected=0,mood='neutral',running=false,frame=0;
+function render(){const s=data[selected],src=running?s.frames[frame%s.frames.length]:s[mood];$('left').src=src;$('right').src=src;}
+function update(){const s=data[selected];$('title').textContent=`${selected+1}. ${s.name}`;$('description').textContent=s.description;document.querySelectorAll('[data-style]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.style)===selected)));document.querySelectorAll('[data-mood]').forEach(b=>b.setAttribute('aria-pressed',String(!running&&b.dataset.mood===mood)));$('animate').setAttribute('aria-pressed',String(running));$('animate').textContent=running?'Pause animation':'Animate gaze & blink';render();}
+data.forEach((s,i)=>{const b=document.createElement('button');b.className='card';b.dataset.style=i;b.setAttribute('aria-pressed','false');b.innerHTML=`<small>${i===0?'01 / CURRENT':'0'+(i+1)+' / ALTERNATIVE'}</small><strong>${s.name}</strong><div class="pair"><img class="eye" alt="${s.name}, left eye" src="${s.neutral}"><img class="eye" alt="${s.name}, right eye" src="${s.neutral}"></div><p>${s.description}</p>`;b.addEventListener('click',()=>{selected=i;frame=0;update();});$('gallery').append(b);});
+document.querySelectorAll('[data-mood]').forEach(b=>b.addEventListener('click',()=>{mood=b.dataset.mood;running=false;update();}));
+$('animate').addEventListener('click',()=>{running=!running;if(running){mood='neutral';frame=0;}update();});
+setInterval(()=>{if(running&&!document.hidden){frame++;render();}},100);
+update();
+})();
+</script></main></body></html>

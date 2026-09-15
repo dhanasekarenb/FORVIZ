@@ -36,7 +36,7 @@ Disconnect power before changing wiring. Power the servos from the external regu
 | Both servo grounds | External supply ground and Pi GND, e.g. physical pin 34 |
 | Camera ribbon | Pi CSI camera connector |
 
-Use separate buses for two OLEDs with the same `0x3C` address:
+For independent left/right eyes, use separate buses for two OLEDs with the same `0x3C` address:
 
 | OLED connection | Left display / bus 1 | Right display / bus 3 |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ Use separate buses for two OLEDs with the same `0x3C` address:
 | SDA | BCM GPIO 2, physical pin 3 | BCM GPIO 23, physical pin 16 |
 | SCL | BCM GPIO 3, physical pin 5 | BCM GPIO 24, physical pin 18 |
 
-The optional bus-3 setup below enables the second display. A display already configured for `0x3D` can instead share bus 1 with a `0x3C` display. The software probes supported addresses automatically.
+The optional bus-3 setup below enables the second display. A display already configured for `0x3D` can instead share bus 1 with a `0x3C` display. The software probes supported addresses automatically. If both OLEDs share bus 1 and address `0x3C`, use `python3 test_oled.py --mirror-eye` and `python3 pi_tracker.py --mirror-eye`: both show the same centered eye. An I2C scan reports one address in that wiring and cannot count the physical screens.
 
 ## Set up the Raspberry Pi
 

@@ -262,6 +262,25 @@ class DisplayTests(unittest.TestCase):
                     self.assertEqual(image.mode, '1')
                     self.assertIsNotNone(image.getbbox())
 
+    def test_full_screen_eye_coverage_and_animation(self):
+        renderer = oled_face.RobotEyesRenderer()
+        neutral = renderer.render_single_eye()
+        left, top, right, bottom = neutral.getbbox()
+        self.assertGreaterEqual(right - left, 120)
+        self.assertGreaterEqual(bottom - top, 58)
+        self.assertEqual(neutral.tobytes(), renderer.render_dual_screen()[0].tobytes())
+        self.assertNotEqual(renderer.render_single_eye(gaze_x=-1).tobytes(),
+                            renderer.render_single_eye(gaze_x=1).tobytes())
+        blink = renderer.render_single_eye(blink_pct=1).getbbox()
+        self.assertLessEqual(blink[3] - blink[1], 3)
+        for mood in ('NEUTRAL', 'HAPPY', 'HEART'):
+            for frame in (renderer.render_single_eye(mood), *renderer.render_dual_screen(mood)):
+                left, top, right, bottom = frame.getbbox()
+                self.assertGreater(left, 0)
+                self.assertGreater(top, 0)
+                self.assertLess(right, frame.width)
+                self.assertLess(bottom, frame.height)
+
 
 class IntegrationTests(unittest.TestCase):
     def test_model_path_and_shared_controllers(self):
