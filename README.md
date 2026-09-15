@@ -66,6 +66,24 @@ python3 test_oled.py --scan
 
 Reboot if bus 3 is not available after enabling it. See [runtime setup troubleshooting](docs/RUNTIME.md#setup-and-dependencies) for dependency versions and `pigpiod` checks.
 
+## Lower processing load and temperature
+
+The tracker requests 320 × 240 capture at 15 FPS, limits detection to 15 runs per second, and uses one OpenCV worker thread. It also caps the inference image's longest side at 320 pixels if a camera returns larger frames. Face coordinates are mapped back to the original frame for tracking.
+
+For the robot's same-bus mirrored OLEDs, run without the camera preview:
+
+```bash
+python3 pi_tracker.py --mirror-eye --headless
+```
+
+For a lower frame rate:
+
+```bash
+python3 pi_tracker.py --mirror-eye --headless --camera-fps 10 --detect-fps 10
+```
+
+Keep your existing rotation, servo direction, and calibration flags on these commands. The terminal reports available CPU temperature and firmware throttling flags every ten seconds. Reduced resolution can miss smaller or more distant faces; these defaults have not been thermally measured on your Pi. See [temperature checks and tuning](docs/RUNTIME.md#processing-load-and-temperature).
+
 ## Calibrate before tracking
 
 1. **Simulate the servo sequence.** This runs without GPIO output or a camera:

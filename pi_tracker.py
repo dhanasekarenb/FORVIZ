@@ -7,6 +7,8 @@ import argparse
 import math
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import time
 
@@ -24,7 +26,7 @@ except ImportError:
 
 class PiCameraStream:
     """Handles camera capture using Picamera2 or OpenCV fallback."""
-    def __init__(self, width=640, height=480, fps=30):
+    def __init__(self, width=320, height=240, fps=15):
         self.width = width
         self.height = height
         self.fps = fps
@@ -36,7 +38,12 @@ class PiCameraStream:
             try:
                 print("[CAM] Initializing Raspberry Pi Camera via Picamera2...")
                 self.picam2 = Picamera2()
-                config = self.picam2.create_preview_configuration(main={"size": (width, height), "format": "RGB888"})
+                frame_us = round(1_000_000 / fps)
+                config = self.picam2.create_preview_configuration(
+                    main={"size": (width, height), "format": "RGB888"},
+                    controls={"FrameDurationLimits": (frame_us, frame_us)},
+                    queue=False,
+                )
                 self.picam2.configure(config)
                 self.picam2.start()
                 time.sleep(1.0)
@@ -54,6 +61,7 @@ class PiCameraStream:
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             self.cap.set(cv2.CAP_PROP_FPS, fps)
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Best effort; backend dependent.
             if not self.cap.isOpened():
                 self.cap.release()
                 raise RuntimeError("Failed to open camera! Check CSI ribbon cable or run 'rpicam-hello'.")
@@ -82,7 +90,12 @@ class PiCameraStream:
 # ---------------------------------------------------------------------------
 class FaceDetectorYuNet:
     """Ultra-lightweight (232KB) Face Detector for Raspberry Pi 4 CPU."""
-    def __init__(self, model_path=YUNET_MODEL_PATH, conf_threshold=0.6, nms_threshold=0.3):
+    def __init__(self, model_path=YUNET_MODEL_PATH, conf_threshold=0.6, nms_threshold=0.3,
+                 max_input_size=320):
+        if max_input_size < 64:
+            raise ValueError('Detection input size must be at least 64 pixels')
+        self.max_input_size = max_input_size
+        self._input_size = None
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file '{model_path}' not found! Run setup_pi.sh to download it.")
 
@@ -99,23 +112,82 @@ class FaceDetectorYuNet:
 
     def detect(self, frame):
         h, w = frame.shape[:2]
-        self.detector.setInputSize((w, h))
         t0 = time.perf_counter()
-        _, faces = self.detector.detect(frame)
+        # Bound inference cost even when a USB camera ignores the requested size.
+        scale = min(1.0, self.max_input_size / max(w, h))
+        dw, dh = max(1, round(w * scale)), max(1, round(h * scale))
+        small = frame if (dw, dh) == (w, h) else cv2.resize(frame, (dw, dh), interpolation=cv2.INTER_AREA)
+        if self._input_size != (dw, dh):
+            self.detector.setInputSize((dw, dh))
+            self._input_size = (dw, dh)
+        _, faces = self.detector.detect(small)
         latency_ms = (time.perf_counter() - t0) * 1000
 
         results = []
         if faces is not None:
             for face in faces:
-                x, y, bw, bh = map(int, face[0:4])
+                sx, sy = w / dw, h / dh
+                x, y, bw, bh = [int(round(float(v) * s)) for v, s in zip(face[0:4], (sx, sy, sx, sy))]
                 conf = float(face[14])
-                landmarks = [(int(face[i]), int(face[i+1])) for i in range(4, 14, 2)]
+                landmarks = [(int(round(float(face[i]) * sx)), int(round(float(face[i+1]) * sy)))
+                             for i in range(4, 14, 2)]
                 results.append({
                     "box": (x, y, bw, bh),
                     "confidence": conf,
                     "landmarks": landmarks
                 })
         return results, latency_ms
+
+
+class FrameRateLimiter:
+    """Sleep between loop starts; never burst to catch up after slow inference."""
+    def __init__(self, fps, clock=time.monotonic, sleep=time.sleep):
+        if not math.isfinite(fps) or fps <= 0:
+            raise ValueError('Frame rate must be finite and positive')
+        self.period, self.clock, self.sleep = 1.0 / fps, clock, sleep
+        self.next_start = clock()
+
+    def wait(self):
+        delay = self.next_start - self.clock()
+        if delay > 0:
+            self.sleep(delay)
+        self.next_start = self.clock() + self.period
+
+
+class ThermalMonitor:
+    """Read Pi temperature and firmware flags at most once every ten seconds."""
+    def __init__(self):
+        self.path = Path('/sys/class/thermal/thermal_zone0/temp')
+        self.command = shutil.which('vcgencmd') if sys.platform.startswith('linux') else None
+        self.next_read = 0.0
+
+    def report(self, now):
+        if now < self.next_read:
+            return None
+        self.next_read = now + 10.0
+        info = []
+        try:
+            temp = float(self.path.read_text().strip()) / 1000.0
+            if math.isfinite(temp):
+                info.append(f'CPU {temp:.1f} C')
+                if temp >= 75:
+                    info.append('HOT: check airflow/cooling; lower --camera-fps and --detect-fps')
+        except (OSError, ValueError):
+            pass
+        if self.command:
+            try:
+                result = subprocess.run([self.command, 'get_throttled'], capture_output=True,
+                                        text=True, timeout=0.25, check=True)
+                flags = int(result.stdout.strip().split('=', 1)[1], 16)
+                labels = ('undervoltage', 'frequency capped', 'throttled', 'soft temperature limit')
+                active = [label for bit, label in enumerate(labels) if flags & (1 << bit)]
+                past = [label for bit, label in enumerate(labels) if flags & (1 << (bit + 16))]
+                info.append('now: ' + (', '.join(active) or 'no flags'))
+                if past:
+                    info.append('earlier this boot: ' + ', '.join(past))
+            except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+                info.append('firmware flags unavailable')
+        return '[THERMAL] ' + ' | '.join(info) if info else None
 
 
 def draw_hud(frame, primary_face, pan_deg, tilt_deg, state_name, fps, latency_ms):
@@ -178,7 +250,9 @@ class FaceTrackingState:
         else:
             # Two-stage adaptive filter: suppresses camera sensor jitter (< 3px)
             # while providing ultra-smooth, responsive motion for real head movements
-            dist = math.hypot(raw_x - self.smooth_cx, raw_y - self.smooth_cy)
+            # Keep the same normalized jitter filtering after reducing resolution.
+            dist = math.hypot((raw_x - self.smooth_cx) * 640 / width,
+                              (raw_y - self.smooth_cy) * 480 / height)
             if dist > 3.0:
                 factor = min(1.0, dist / 80.0)
                 tc = 0.09 * (1.0 - 0.55 * factor)  # 0.09s for subtle glide, 0.04s for fast tracking
@@ -227,6 +301,12 @@ def parse_args(argv=None):
     display.add_argument('--headless', action='store_true', help='Disable OpenCV preview')
     display.add_argument('--preview', action='store_true', help='Request OpenCV preview on a desktop')
     parser.add_argument('--model', default=YUNET_MODEL_PATH, help='YuNet ONNX model path')
+    parser.add_argument('--camera-width', type=int, default=320, help='Requested camera width (default: 320)')
+    parser.add_argument('--camera-height', type=int, default=240, help='Requested camera height (default: 240)')
+    parser.add_argument('--camera-fps', type=float, default=15, help='Requested camera frame rate (default: 15)')
+    parser.add_argument('--detect-fps', type=float, default=15, help='Maximum detection/servo loop rate (default: 15)')
+    parser.add_argument('--detect-size', type=int, default=320, help='Maximum inference image dimension (default: 320)')
+    parser.add_argument('--cv-threads', type=int, default=1, help='OpenCV worker threads (default: 1)')
     parser.add_argument('--pan-pin', type=int, default=12)
     parser.add_argument('--tilt-pin', type=int, default=19)
     parser.add_argument('--pan-min', type=float, default=40)
@@ -251,6 +331,12 @@ def parse_args(argv=None):
                         help='Optional idle PWM timeout in seconds; releases head holding torque')
     args = parser.parse_args(argv)
     try:
+        if not all(64 <= value <= 4096 for value in (args.camera_width, args.camera_height, args.detect_size)):
+            raise ValueError('Camera and detection dimensions must be between 64 and 4096 pixels')
+        if not all(math.isfinite(value) and 1 <= value <= 60 for value in (args.camera_fps, args.detect_fps)):
+            raise ValueError('Camera and detection rates must be between 1 and 60 FPS')
+        if not 1 <= args.cv_threads <= 16:
+            raise ValueError('OpenCV threads must be between 1 and 16')
         for axis in ('pan', 'tilt'):
             low, high = PanTiltTracker._validate_range((getattr(args, axis + '_min'), getattr(args, axis + '_max')))
             center = getattr(args, axis + '_center')
@@ -279,8 +365,12 @@ def main(argv=None):
     print(f'[SERVOS] Limits: pan {args.pan_min:g}..{args.pan_max:g}, tilt {args.tilt_min:g}..{args.tilt_max:g} degrees')
     camera = tracker = face_display = None
     try:
-        detector = FaceDetectorYuNet(args.model)
-        camera = PiCameraStream(width=640, height=480, fps=30)
+        cv2.setNumThreads(args.cv_threads)
+        print(f'[PERF] Camera {args.camera_width}x{args.camera_height} @ {args.camera_fps:g} FPS; '
+              f'detection <= {min(args.detect_fps, args.camera_fps):g} FPS, max {args.detect_size}px; '
+              f'OpenCV threads={args.cv_threads}')
+        detector = FaceDetectorYuNet(args.model, max_input_size=args.detect_size)
+        camera = PiCameraStream(width=args.camera_width, height=args.camera_height, fps=args.camera_fps)
         # Defaults are inverted to match the physical Pan/Tilt gimbal assembly:
         # Face UP -> Head UP, Face DOWN -> Head DOWN, Face LEFT -> Head LEFT, Face RIGHT -> Head RIGHT
         invert_tilt = False if args.reverse_tilt else True
@@ -308,7 +398,10 @@ def main(argv=None):
         state = FaceTrackingState(face_loss_sec=args.face_loss_sec)
         prev_time, last_telemetry = time.monotonic(), 0.0
         fps = 0.0
+        limiter = FrameRateLimiter(min(args.detect_fps, args.camera_fps))
+        thermal = ThermalMonitor()
         while True:
+            limiter.wait()
             ret, frame = camera.read()
             if not ret:
                 print('[ERROR] Camera stream interrupted.')
@@ -328,6 +421,9 @@ def main(argv=None):
                 pan, tilt = tracker.step_scan()
             if face_display:
                 face_display.set_expression(state.mood, state.gaze_x, state.gaze_y)
+            thermal_status = thermal.report(now)
+            if thermal_status:
+                print(thermal_status)
             if not headless:
                 try:
                     cv2.imshow('FORVIZ Robot Tracker', draw_hud(frame, primary_face, pan, tilt, state.state_name, fps, latency_ms))

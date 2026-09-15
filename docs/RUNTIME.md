@@ -40,6 +40,39 @@ python3 test_oled.py --scan
 
 The script configures software I2C bus 3. Reboot if the new bus does not appear. The [README wiring tables](../README.md#wiring) list signal pins, OLED power, and the external servo supply. The external supply and Pi share ground; servo power is separate from the Pi's positive supply output.
 
+## Processing load and temperature
+
+Run the same-bus eye setup without preview processing:
+
+```bash
+python3 pi_tracker.py --mirror-eye --headless
+```
+
+The new defaults request **320 × 240 at 15 FPS**, with a maximum of **15 detection/servo updates per second** and **one OpenCV worker thread**. Previously capture requested 640 × 480 at 30 FPS and detection ran without an application rate limit; the Picamera2 branch did not apply the FPS setting to its camera configuration. The new Picamera2 configuration sets `FrameDurationLimits` and requests fresh frames with `queue=False`, as described in the [Picamera2 manual](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf).
+
+Each detection uses at most a 320-pixel longest side by default, even if an OpenCV camera ignores the capture-size request. This gives 320 × 240 for a 4:3 frame: 75% fewer input pixels than 640 × 480. Resizing preserves the aspect ratio, and boxes/landmarks are mapped back to the captured frame. The input size is only reset when it changes. The loop sleeps between starts, with no bursts to catch up after a slow frame. These changes reduce work; the actual reduction in temperature depends on the Pi, ambient temperature, and enclosure airflow.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--camera-width` / `--camera-height` | `320` / `240` | Requested capture dimensions; camera support varies |
+| `--camera-fps` | `15` | Requested capture rate |
+| `--detect-fps` | `15` | Caps detection and servo update rate, also limited by requested camera FPS |
+| `--detect-size` | `320` | Maximum longest side of the inference image; smaller frames are not enlarged |
+| `--cv-threads` | `1` | OpenCV worker thread setting |
+
+For less processing, try `--camera-fps 10 --detect-fps 10` on the command above. Keep existing OLED rotation, servo direction, and calibrated limit flags. Smaller input can miss small/distant faces, and lower rates reduce responsiveness. Below 10 FPS the servo's existing 100 ms elapsed-time cap can also slow movement. For more face detail, try `--camera-width 640 --camera-height 480 --detect-size 480` while retaining the FPS cap; this increases processing cost. OLED animation stays on its existing separate worker.
+
+The program prints available `[THERMAL]` readings every ten seconds in both headless and preview modes. It reads the Linux temperature sensor and, when installed, `vcgencmd get_throttled` with a bounded timeout. Current flags and flags from earlier in this boot are labelled separately. Missing readings do not stop tracking. A 75°C application warning asks you to check cooling; it does not change firmware settings, stop the robot, or guarantee an upper temperature limit.
+
+Measure the Pi directly before and after several minutes with the same workload:
+
+```bash
+vcgencmd measure_temp
+vcgencmd get_throttled
+```
+
+Raspberry Pi documents progressive Arm throttling between 80°C and 85°C; at 85°C the GPU is also throttled. Keep the enclosure vents clear and provide cooling if needed. Software optimization alone does not establish adequate cooling. See [official thermal management](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#frequency-management-and-thermal-control) and [firmware flag meanings](https://www.raspberrypi.com/documentation/computers/os.html#get_throttled).
+
 ## First physical calibration
 
 The commanded angles are controller estimates, not measured shaft positions. SG90 variants, stock horns, printed fits, and ribbon routing must be checked on the actual build. The enclosure uses captive stock horns and printed retainers; follow the mechanical guide without adding horn screws or altering the servo internals.
