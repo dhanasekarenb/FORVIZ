@@ -37,6 +37,26 @@ class PerformanceTests(unittest.TestCase):
         detector.detect(np.zeros((640, 480, 3), dtype=np.uint8))
         self.assertEqual(native.detect.call_args.args[0].shape, (320, 240, 3))
 
+    def test_camera_stream_flips_frames(self):
+        fake_cap = Mock()
+        test_frame = np.array([[[1, 2, 3], [4, 5, 6]]], dtype=np.uint8)  # 1x2 image
+        fake_cap.read.return_value = (True, test_frame.copy())
+        with patch.object(app.cv2, 'VideoCapture', return_value=fake_cap),              patch.object(app, 'PICAM2_AVAILABLE', False):
+            # Default hflip=True: [ [1,2,3], [4,5,6] ] -> [ [4,5,6], [1,2,3] ]
+            cam = app.PiCameraStream(320, 240, 15, hflip=True)
+            ret, flipped = cam.read()
+            self.assertTrue(ret)
+            self.assertEqual(flipped[0, 0, 0], 4)
+            self.assertEqual(flipped[0, 1, 0], 1)
+
+            # hflip=False: unflipped
+            fake_cap.read.return_value = (True, test_frame.copy())
+            cam_noflip = app.PiCameraStream(320, 240, 15, hflip=False)
+            ret, unflipped = cam_noflip.read()
+            self.assertTrue(ret)
+            self.assertEqual(unflipped[0, 0, 0], 1)
+            self.assertEqual(unflipped[0, 1, 0], 4)
+
     def test_picamera_receives_frame_duration_and_fresh_capture_setting(self):
         native = Mock()
         with (patch.object(app, 'PICAM2_AVAILABLE', True),
@@ -131,7 +151,7 @@ class PerformanceTests(unittest.TestCase):
               contextlib.redirect_stdout(io.StringIO())):
             thermal_type.return_value.report.return_value = None
             app.main(['--headless','--no-oled','--no-servo','--camera-fps','10'])
-        camera_type.assert_called_once_with(width=320, height=240, fps=10)
+        camera_type.assert_called_once_with(width=320, height=240, fps=10, hflip=True, vflip=False)
         detector_type.assert_called_once_with(app.YUNET_MODEL_PATH, max_input_size=320)
         threads.assert_called_once_with(1)
         limiter_type.assert_called_once_with(10)

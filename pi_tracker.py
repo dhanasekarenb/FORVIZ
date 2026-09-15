@@ -26,10 +26,12 @@ except ImportError:
 
 class PiCameraStream:
     """Handles camera capture using Picamera2 or OpenCV fallback."""
-    def __init__(self, width=320, height=240, fps=15):
+    def __init__(self, width=320, height=240, fps=15, hflip=True, vflip=False):
         self.width = width
         self.height = height
         self.fps = fps
+        self.hflip = hflip
+        self.vflip = vflip
         self.use_picam2 = PICAM2_AVAILABLE
         self.picam2 = None
         self.cap = None
@@ -70,10 +72,20 @@ class PiCameraStream:
         if self.use_picam2:
             # Picamera2 RGB888 arrays are BGR byte order, as OpenCV expects.
             # https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf
-            return True, self.picam2.capture_array()
+            frame = self.picam2.capture_array()
+            ret = True
         else:
             ret, frame = self.cap.read()
-            return ret, frame
+        if ret and frame is not None:
+            hflip = getattr(self, 'hflip', False)
+            vflip = getattr(self, 'vflip', False)
+            if hflip and vflip:
+                frame = cv2.flip(frame, -1)
+            elif hflip:
+                frame = cv2.flip(frame, 1)
+            elif vflip:
+                frame = cv2.flip(frame, 0)
+        return ret, frame
 
     def release(self):
         if self.use_picam2 and self.picam2 is not None:
@@ -307,6 +319,12 @@ def parse_args(argv=None):
     parser.add_argument('--detect-fps', type=float, default=15, help='Maximum detection/servo loop rate (default: 15)')
     parser.add_argument('--detect-size', type=int, default=320, help='Maximum inference image dimension (default: 320)')
     parser.add_argument('--cv-threads', type=int, default=1, help='OpenCV worker threads (default: 1)')
+    parser.add_argument('--no-hflip', dest='hflip', action='store_false', default=True,
+                        help='Disable horizontal camera flip (mirror preview)')
+    parser.add_argument('--hflip', dest='hflip', action='store_true', default=True,
+                        help='Horizontally flip camera for natural mirror view (default: True)')
+    parser.add_argument('--vflip', action='store_true', default=False,
+                        help='Enable vertical camera flip (default: False)')
     parser.add_argument('--pan-pin', type=int, default=12)
     parser.add_argument('--tilt-pin', type=int, default=19)
     parser.add_argument('--pan-min', type=float, default=40)
@@ -370,7 +388,8 @@ def main(argv=None):
               f'detection <= {min(args.detect_fps, args.camera_fps):g} FPS, max {args.detect_size}px; '
               f'OpenCV threads={args.cv_threads}')
         detector = FaceDetectorYuNet(args.model, max_input_size=args.detect_size)
-        camera = PiCameraStream(width=args.camera_width, height=args.camera_height, fps=args.camera_fps)
+        camera = PiCameraStream(width=args.camera_width, height=args.camera_height, fps=args.camera_fps,
+                                hflip=args.hflip, vflip=args.vflip)
         # Defaults are inverted to match the physical Pan/Tilt gimbal assembly:
         # Face UP -> Head UP, Face DOWN -> Head DOWN, Face LEFT -> Head LEFT, Face RIGHT -> Head RIGHT
         invert_tilt = False if args.reverse_tilt else True
