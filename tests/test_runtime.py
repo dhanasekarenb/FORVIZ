@@ -205,7 +205,7 @@ class DisplayTests(unittest.TestCase):
 
         with (patch.object(oled_face, 'LUMA_AVAILABLE', True),
               patch.object(oled_face, 'i2c', side_effect=connect, create=True),
-              patch.object(oled_face, 'ssd1306', side_effect=lambda serial: serial, create=True),
+              patch.object(oled_face, 'ssd1306', side_effect=lambda serial, rotate=0: serial, create=True),
               contextlib.redirect_stdout(io.StringIO())):
             controller = oled_face.OLEDDisplayController(**kwargs)
         self.addCleanup(controller.stop)
@@ -318,6 +318,8 @@ class IntegrationTests(unittest.TestCase):
 
 
     def test_oled_rotation_cli_args(self):
+        self.assertEqual(pi_tracker.parse_args([]).oled_rotate, 180)
+
         args = pi_tracker.parse_args(['--oled-rotate', '180'])
         self.assertEqual(args.oled_rotate, 180)
         self.assertIsNone(args.oled1_rotate)

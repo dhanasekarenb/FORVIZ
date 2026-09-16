@@ -11,7 +11,7 @@ Usage:
 __test__ = False  # Interactive hardware demo, excluded from pytest collection.
 import time
 import argparse
-from oled_face import OLEDDisplayController
+from oled_face import DEFAULT_OLED_ROTATION, OLEDDisplayController
 
 def scan_i2c():
     print("=" * 65)
@@ -73,7 +73,8 @@ def scan_i2c():
             print(f"  - Screen on Port {p}, Addr 0x{a:X}")
     print("=" * 65)
 
-def run_hardware_demo(dual_mode=None, rotate=0, rotate_1=None, rotate_2=None, single_eye=False):
+def run_hardware_demo(dual_mode=None, rotate=DEFAULT_OLED_ROTATION,
+                      rotate_1=None, rotate_2=None, single_eye=False):
     print("=" * 65)
     print("        ROBOT OLED EYES EXPRESSION DEMO")
     print("=" * 65)
@@ -112,7 +113,7 @@ def run_hardware_demo(dual_mode=None, rotate=0, rotate_1=None, rotate_2=None, si
         face.set_expression("HAPPY", gaze_x=0.0, gaze_y=0.0)
         time.sleep(3)
 
-        print("[6/6] Heart Eyes (Face Recognized!)...")
+        print("[6/6] Heart Eyes (Demo Expression)...")
         face.set_expression("HEART", gaze_x=0.0, gaze_y=0.0)
         time.sleep(3)
 
@@ -130,8 +131,9 @@ if __name__ == "__main__":
     modes.add_argument("--single", action="store_true", help="Use one OLED screen")
     modes.add_argument("--mirror-eye", "--single-eye", dest="mirror_eye", action="store_true",
                        help="Render ONE big centered eye for mirrored dual-display on Pin 3 & Pin 5")
-    parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
-                        help="Rotate all OLED displays (0, 90, 180, 270 deg)")
+    parser.add_argument("--rotate", type=int, default=DEFAULT_OLED_ROTATION,
+                        choices=[0, 90, 180, 270],
+                        help="Rotate all OLED displays (default: 180 for the installed panels)")
     parser.add_argument("--rotate1", type=int, default=None, choices=[0, 90, 180, 270],
                         help="Rotate screen 1 specifically (0, 90, 180, 270 deg)")
     parser.add_argument("--rotate2", type=int, default=None, choices=[0, 90, 180, 270],

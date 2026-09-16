@@ -128,7 +128,7 @@ python3 pi_tracker.py --help
 | `--preview` | Off | Requests the OpenCV desktop preview |
 | `--single-oled` | Off | Uses one detected OLED with both eyes on it |
 | `--dual-oled` | Off | Requests two OLEDs, falling back to available displays |
-| `--oled-rotate` | `0` | Rotates all OLED displays (`0`, `90`, `180`, `270` deg) |
+| `--oled-rotate` | `180` | Rotates both OLEDs to match their upside-down physical mounting (`0`, `90`, `180`, `270` deg) |
 | `--oled1-rotate` | None | Rotates Screen 1 specifically (`0`, `90`, `180`, `270` deg) |
 | `--oled2-rotate` | None | Rotates Screen 2 specifically (`0`, `90`, `180`, `270` deg) |
 | `--pan-pin`, `--tilt-pin` | `12`, `19` | BCM GPIO signal pins; must be distinct |

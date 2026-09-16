@@ -22,6 +22,12 @@ except ImportError:
     LUMA_AVAILABLE = False
 
 
+# Both OLED boards in the robot are installed upside down.  Keeping this as a
+# shared default makes asymmetric expressions and gaze direction agree in the
+# tracker and in the standalone OLED test.
+DEFAULT_OLED_ROTATION = 180
+
+
 class RobotEyesRenderer:
     """Draws expressive vector/pixel eyes onto PIL 128x64 canvas."""
     def __init__(self, width=128, height=64):
@@ -141,7 +147,8 @@ class OLEDDisplayController:
     """
     def __init__(self, dual_screen=None, port_1=1, addr_1=0x3C,
                  port_2=None, addr_2=None, *, hardware=True,
-                 rotate=0, rotate_1=None, rotate_2=None, single_eye=False):
+                 rotate=DEFAULT_OLED_ROTATION, rotate_1=None, rotate_2=None,
+                 single_eye=False):
         if (port_2 is None) != (addr_2 is None):
             raise ValueError('Specify both port_2 and addr_2, or neither')
         self.renderer = RobotEyesRenderer(128, 64)

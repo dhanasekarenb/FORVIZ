@@ -138,7 +138,8 @@ This is face detection and tracking. The heart expression in the OLED demonstrat
 | --- | --- |
 | Camera and simulated servo telemetry, no OLED output | `python3 pi_tracker.py --no-servo --no-oled` |
 | One detected OLED displaying both eyes | `python3 pi_tracker.py --single-oled` |
-| Invert or rotate both displays (e.g. 180 deg) | `python3 pi_tracker.py --oled-rotate 180` |
+| Use the installed upside-down OLEDs (default) | `python3 pi_tracker.py` |
+| Override both displays to upright mounting | `python3 pi_tracker.py --oled-rotate 0` |
 | Rotate Screen 1 and Screen 2 independently | `python3 pi_tracker.py --oled1-rotate 180 --oled2-rotate 0` |
 | Force a desktop camera preview | `python3 pi_tracker.py --preview` |
 | Headless operation | `python3 pi_tracker.py --headless` |

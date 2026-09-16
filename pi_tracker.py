@@ -14,7 +14,7 @@ import time
 
 import cv2
 from servos import PanTiltTracker
-from oled_face import OLEDDisplayController, RobotEyesRenderer
+from oled_face import DEFAULT_OLED_ROTATION, OLEDDisplayController, RobotEyesRenderer
 
 YUNET_MODEL_PATH = str(Path(__file__).resolve().with_name('face_detection_yunet_2023mar.onnx'))
 
@@ -303,8 +303,9 @@ def parse_args(argv=None):
     oled.add_argument('--dual-oled', action='store_true', help='Request two OLEDs; fall back to available screens')
     oled.add_argument('--single-oled', action='store_true', help='Use one OLED, rendering both eyes on it')
     oled.add_argument('--mirror-eye', '--single-eye', dest='mirror_eye', action='store_true', help='Render ONE big centered eye (use when both OLEDs share Pin 3 and Pin 5 on 0x3C)')
-    parser.add_argument('--oled-rotate', type=int, default=0, choices=[0, 90, 180, 270],
-                        help='Rotate all OLED displays (0, 90, 180, or 270 degrees)')
+    parser.add_argument('--oled-rotate', type=int, default=DEFAULT_OLED_ROTATION,
+                        choices=[0, 90, 180, 270],
+                        help='Rotate all OLED displays (default: 180 for the installed panels)')
     parser.add_argument('--oled1-rotate', type=int, default=None, choices=[0, 90, 180, 270],
                         help='Rotate screen 1 specifically (0, 90, 180, or 270 degrees)')
     parser.add_argument('--oled2-rotate', type=int, default=None, choices=[0, 90, 180, 270],
