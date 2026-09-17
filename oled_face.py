@@ -142,7 +142,7 @@ class RobotEyesRenderer:
     @staticmethod
     def _draw_uchiha_eye(draw, cx, cy, w, h, gaze_x, gaze_y,
                          blink_pct, is_left):
-        """Draw a monochrome three-tomoe Sharingan-style eye."""
+        """Fill the normal eye body and replace only its pupil with Sharingan."""
         current_h = int(h * (1.0 - blink_pct))
         x0, x1 = cx - w // 2, cx + w // 2
         if current_h <= 3:
@@ -150,36 +150,22 @@ class RobotEyesRenderer:
             return
 
         y0, y1 = cy - current_h // 2, cy + current_h // 2
-        third = max(3, w // 3)
-        outer = [
-            (x0, cy), (cx - third, y0 + 4), (cx, y0 + 1),
-            (cx + third, y0 + 4), (x1, cy),
-            (cx + third, y1 - 4), (cx, y1 - 1),
-            (cx - third, y1 - 4),
-        ]
-        draw.polygon(outer, fill=1)
+        rx = 8 if w > 40 else 6
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=rx, fill=1, outline=1)
+        if blink_pct >= 0.6:
+            return
 
-        brow_depth = max(2, current_h // 10)
-        if is_left:
-            draw.polygon([(x0, y0), (x1, y0), (x1, y0 + brow_depth),
-                          (x0, y0 + brow_depth * 2)], fill=0)
-        else:
-            draw.polygon([(x0, y0), (x1, y0), (x1, y0 + brow_depth * 2),
-                          (x0, y0 + brow_depth)], fill=0)
-
-        iris_r = max(6, min(current_h // 2 - 3, w // 6))
-        max_offset_x = max(0, w // 2 - iris_r - max(5, w // 9))
+        iris_r = max(5, min(current_h // 2 - 3, w // 5 + 1))
+        max_offset_x = max(0, w // 2 - iris_r - 4)
         max_offset_y = max(0, current_h // 2 - iris_r - 3)
         px = cx + int(gaze_x * max_offset_x)
         py = cy + int(gaze_y * max_offset_y)
 
-        # Black outer ring, bright iris field and black centre pupil.
+        # The eye remains fully lit like NEUTRAL; only the ring, centre and
+        # three tomoe are dark pupil details.
         draw.ellipse([px - iris_r, py - iris_r,
-                      px + iris_r, py + iris_r], fill=0)
-        ring = max(1, iris_r // 6)
-        inner_r = iris_r - ring
-        draw.ellipse([px - inner_r, py - inner_r,
-                      px + inner_r, py + inner_r], fill=1)
+                      px + iris_r, py + iris_r], outline=0,
+                     width=max(2, iris_r // 8))
         pupil_r = max(2, iris_r // 5)
         draw.ellipse([px - pupil_r, py - pupil_r,
                       px + pupil_r, py + pupil_r], fill=0)

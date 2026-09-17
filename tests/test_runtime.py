@@ -331,6 +331,8 @@ class DisplayTests(unittest.TestCase):
         right = renderer.render_single_eye('UCHIHA', gaze_x=1)
         self.assertNotEqual(neutral.tobytes(), uchiha.tobytes())
         self.assertNotEqual(left.tobytes(), right.tobytes())
+        for point in ((3, 32), (64, 3), (124, 32), (64, 60)):
+            self.assertEqual(uchiha.getpixel(point), 1)
 
 
 class IntegrationTests(unittest.TestCase):
