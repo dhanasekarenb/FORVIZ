@@ -164,6 +164,8 @@ This is face detection and tracking. The heart expression in the OLED demonstrat
 | Override both displays to upright mounting | `python3 pi_tracker.py --oled-rotate 0` |
 | Rotate Screen 1 and Screen 2 independently | `python3 pi_tracker.py --oled1-rotate 180 --oled2-rotate 0` |
 | Keep the moving pupils in nightmare eyes | `python3 pi_tracker.py --mirror-eye --nightmare` |
+| Keep the moving pupils in Naruto Sage-style eyes | `python3 pi_tracker.py --mirror-eye --naruto` |
+| Keep the moving pupils in Uchiha three-tomoe eyes | `python3 pi_tracker.py --mirror-eye --uchiha` |
 | Force a desktop camera preview | `python3 pi_tracker.py --preview` |
 | Headless operation | `python3 pi_tracker.py --headless` |
 | All runtime options | `python3 pi_tracker.py --help` |

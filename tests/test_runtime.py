@@ -277,7 +277,7 @@ class DisplayTests(unittest.TestCase):
 
     def test_eye_rendering_variants(self):
         renderer = oled_face.RobotEyesRenderer()
-        for mood in ('NEUTRAL', 'HAPPY', 'HEART', 'NIGHTMARE'):
+        for mood in ('NEUTRAL', 'HAPPY', 'HEART', 'NIGHTMARE', 'NARUTO', 'UCHIHA'):
             for blink in (0, 0.5, 1):
                 for image in (renderer.render_single_screen(mood, -1, 1, blink),
                               renderer.render_single_eye(mood, 0, 0, blink),
@@ -297,7 +297,7 @@ class DisplayTests(unittest.TestCase):
                             renderer.render_single_eye(gaze_x=1).tobytes())
         blink = renderer.render_single_eye(blink_pct=1).getbbox()
         self.assertLessEqual(blink[3] - blink[1], 3)
-        for mood in ('NEUTRAL', 'HAPPY', 'HEART', 'NIGHTMARE'):
+        for mood in ('NEUTRAL', 'HAPPY', 'HEART', 'NIGHTMARE', 'NARUTO', 'UCHIHA'):
             for frame in (renderer.render_single_eye(mood), *renderer.render_dual_screen(mood)):
                 left, top, right, bottom = frame.getbbox()
                 self.assertGreater(left, 0)
@@ -312,6 +312,24 @@ class DisplayTests(unittest.TestCase):
         left = renderer.render_single_eye('NIGHTMARE', gaze_x=-1)
         right = renderer.render_single_eye('NIGHTMARE', gaze_x=1)
         self.assertNotEqual(neutral.tobytes(), nightmare.tobytes())
+        self.assertNotEqual(left.tobytes(), right.tobytes())
+
+    def test_naruto_eye_is_distinct_and_tracks_gaze(self):
+        renderer = oled_face.RobotEyesRenderer()
+        neutral = renderer.render_single_eye('NEUTRAL')
+        naruto = renderer.render_single_eye('NARUTO')
+        left = renderer.render_single_eye('NARUTO', gaze_x=-1)
+        right = renderer.render_single_eye('NARUTO', gaze_x=1)
+        self.assertNotEqual(neutral.tobytes(), naruto.tobytes())
+        self.assertNotEqual(left.tobytes(), right.tobytes())
+
+    def test_uchiha_eye_is_distinct_and_tracks_gaze(self):
+        renderer = oled_face.RobotEyesRenderer()
+        neutral = renderer.render_single_eye('NEUTRAL')
+        uchiha = renderer.render_single_eye('UCHIHA')
+        left = renderer.render_single_eye('UCHIHA', gaze_x=-1)
+        right = renderer.render_single_eye('UCHIHA', gaze_x=1)
+        self.assertNotEqual(neutral.tobytes(), uchiha.tobytes())
         self.assertNotEqual(left.tobytes(), right.tobytes())
 
 

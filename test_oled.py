@@ -75,7 +75,7 @@ def scan_i2c():
 
 def run_hardware_demo(dual_mode=None, rotate=DEFAULT_OLED_ROTATION,
                       rotate_1=None, rotate_2=None, single_eye=False,
-                      nightmare_only=False):
+                      expression_only=None):
     print("=" * 65)
     print("        ROBOT OLED EYES EXPRESSION DEMO")
     print("=" * 65)
@@ -94,38 +94,46 @@ def run_hardware_demo(dual_mode=None, rotate=DEFAULT_OLED_ROTATION,
     print("=" * 65)
 
     try:
-        if nightmare_only:
-            print("Nightmare Eyes active. Press Ctrl+C to exit...")
-            face.set_expression("NIGHTMARE", gaze_x=0.0, gaze_y=0.0)
+        if expression_only:
+            print(f"{expression_only.title()} Eyes active. Press Ctrl+C to exit...")
+            face.set_expression(expression_only, gaze_x=0.0, gaze_y=0.0)
             while True:
                 time.sleep(1)
 
-        print("[1/7] Neutral Eyes (Idle blinking)...")
+        print("[1/9] Neutral Eyes (Idle blinking)...")
         face.set_expression("NEUTRAL", gaze_x=0.0, gaze_y=0.0)
         time.sleep(3)
 
-        print("[2/7] Tracking Left...")
+        print("[2/9] Tracking Left...")
         face.set_expression("NEUTRAL", gaze_x=-0.9, gaze_y=0.0)
         time.sleep(2)
 
-        print("[3/7] Tracking Right...")
+        print("[3/9] Tracking Right...")
         face.set_expression("NEUTRAL", gaze_x=0.9, gaze_y=0.0)
         time.sleep(2)
 
-        print("[4/7] Looking Up...")
+        print("[4/9] Looking Up...")
         face.set_expression("NEUTRAL", gaze_x=0.0, gaze_y=-0.8)
         time.sleep(2)
 
-        print("[5/7] Happy Face (Target Locked!)...")
+        print("[5/9] Happy Face (Target Locked!)...")
         face.set_expression("HAPPY", gaze_x=0.0, gaze_y=0.0)
         time.sleep(3)
 
-        print("[6/7] Heart Eyes (Demo Expression)...")
+        print("[6/9] Heart Eyes (Demo Expression)...")
         face.set_expression("HEART", gaze_x=0.0, gaze_y=0.0)
         time.sleep(3)
 
-        print("[7/7] Nightmare Eyes...")
+        print("[7/9] Nightmare Eyes...")
         face.set_expression("NIGHTMARE", gaze_x=0.0, gaze_y=0.0)
+        time.sleep(4)
+
+        print("[8/9] Naruto Sage-style Eyes...")
+        face.set_expression("NARUTO", gaze_x=0.0, gaze_y=0.0)
+        time.sleep(4)
+
+        print("[9/9] Uchiha Three-Tomoe Eyes...")
+        face.set_expression("UCHIHA", gaze_x=0.0, gaze_y=0.0)
         time.sleep(4)
 
         print("[Done] Demo completed.")
@@ -137,8 +145,13 @@ def run_hardware_demo(dual_mode=None, rotate=DEFAULT_OLED_ROTATION,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--scan", action="store_true", help="Diagnose connected I2C OLED screens")
-    parser.add_argument("--nightmare", action="store_true",
-                        help="Show only nightmare eyes until Ctrl+C")
+    expressions = parser.add_mutually_exclusive_group()
+    expressions.add_argument("--nightmare", action="store_true",
+                             help="Show only nightmare eyes until Ctrl+C")
+    expressions.add_argument("--naruto", action="store_true",
+                             help="Show only Naruto Sage-style eyes until Ctrl+C")
+    expressions.add_argument("--uchiha", action="store_true",
+                             help="Show only Uchiha three-tomoe eyes until Ctrl+C")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dual", action="store_true", help="Request two OLED screens")
     modes.add_argument("--single", action="store_true", help="Use one OLED screen")
@@ -162,5 +175,7 @@ if __name__ == "__main__":
             rotate_1=args.rotate1,
             rotate_2=args.rotate2,
             single_eye=args.mirror_eye,
-            nightmare_only=args.nightmare,
+            expression_only=('NIGHTMARE' if args.nightmare else
+                             'NARUTO' if args.naruto else
+                             'UCHIHA' if args.uchiha else None),
         )

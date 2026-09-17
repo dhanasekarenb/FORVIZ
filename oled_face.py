@@ -9,6 +9,7 @@ Features:
   - Async Background Threading (Zero FPS impact on AI vision)
   - Dynamic Gaze: Pupils physically follow the user's face position
 """
+import math
 import time
 
 import threading
@@ -77,6 +78,16 @@ class RobotEyesRenderer:
         return img_left, img_right
 
     def _draw_eye(self, draw, cx, cy, w, h, mood, gaze_x, gaze_y, blink_pct, is_left):
+        if mood == "UCHIHA":
+            self._draw_uchiha_eye(
+                draw, cx, cy, w, h, gaze_x, gaze_y, blink_pct, is_left)
+            return
+
+        if mood == "NARUTO":
+            self._draw_naruto_eye(
+                draw, cx, cy, w, h, gaze_x, gaze_y, blink_pct, is_left)
+            return
+
         if mood == "NIGHTMARE":
             self._draw_nightmare_eye(
                 draw, cx, cy, w, h, gaze_x, gaze_y, blink_pct, is_left)
@@ -127,6 +138,128 @@ class RobotEyesRenderer:
             dot_x = px - pupil_w // 4
             dot_y = py - pupil_h // 4
             draw.ellipse([dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r], fill=1)
+
+    @staticmethod
+    def _draw_uchiha_eye(draw, cx, cy, w, h, gaze_x, gaze_y,
+                         blink_pct, is_left):
+        """Draw a monochrome three-tomoe Sharingan-style eye."""
+        current_h = int(h * (1.0 - blink_pct))
+        x0, x1 = cx - w // 2, cx + w // 2
+        if current_h <= 3:
+            draw.line([x0, cy, x1, cy], fill=1, width=2)
+            return
+
+        y0, y1 = cy - current_h // 2, cy + current_h // 2
+        third = max(3, w // 3)
+        outer = [
+            (x0, cy), (cx - third, y0 + 4), (cx, y0 + 1),
+            (cx + third, y0 + 4), (x1, cy),
+            (cx + third, y1 - 4), (cx, y1 - 1),
+            (cx - third, y1 - 4),
+        ]
+        draw.polygon(outer, fill=1)
+
+        brow_depth = max(2, current_h // 10)
+        if is_left:
+            draw.polygon([(x0, y0), (x1, y0), (x1, y0 + brow_depth),
+                          (x0, y0 + brow_depth * 2)], fill=0)
+        else:
+            draw.polygon([(x0, y0), (x1, y0), (x1, y0 + brow_depth * 2),
+                          (x0, y0 + brow_depth)], fill=0)
+
+        iris_r = max(6, min(current_h // 2 - 3, w // 6))
+        max_offset_x = max(0, w // 2 - iris_r - max(5, w // 9))
+        max_offset_y = max(0, current_h // 2 - iris_r - 3)
+        px = cx + int(gaze_x * max_offset_x)
+        py = cy + int(gaze_y * max_offset_y)
+
+        # Black outer ring, bright iris field and black centre pupil.
+        draw.ellipse([px - iris_r, py - iris_r,
+                      px + iris_r, py + iris_r], fill=0)
+        ring = max(1, iris_r // 6)
+        inner_r = iris_r - ring
+        draw.ellipse([px - inner_r, py - inner_r,
+                      px + inner_r, py + inner_r], fill=1)
+        pupil_r = max(2, iris_r // 5)
+        draw.ellipse([px - pupil_r, py - pupil_r,
+                      px + pupil_r, py + pupil_r], fill=0)
+
+        # Three tomoe placed around the pupil. Each dot has a short tangential
+        # tail so it remains recognizable on a 128x64 one-bit display.
+        orbit = max(pupil_r + 3, int(iris_r * 0.60))
+        tomoe_r = max(1, iris_r // 7)
+        for angle in (-90, 30, 150):
+            radians = angle * 3.141592653589793 / 180.0
+            tx = px + int(orbit * math.cos(radians))
+            ty = py + int(orbit * math.sin(radians))
+            draw.ellipse([tx - tomoe_r, ty - tomoe_r,
+                          tx + tomoe_r, ty + tomoe_r], fill=0)
+            tangent_x = int((tomoe_r + 3) * -math.sin(radians))
+            tangent_y = int((tomoe_r + 3) * math.cos(radians))
+            draw.polygon([(tx, ty),
+                          (tx + tangent_x, ty + tangent_y),
+                          (tx + tangent_x // 2 - int(math.cos(radians) * tomoe_r),
+                           ty + tangent_y // 2 - int(math.sin(radians) * tomoe_r))],
+                         fill=0)
+
+    @staticmethod
+    def _draw_naruto_eye(draw, cx, cy, w, h, gaze_x, gaze_y,
+                         blink_pct, is_left):
+        """Draw a monochrome Sage-style ninja eye and horizontal pupil."""
+        current_h = int(h * (1.0 - blink_pct))
+        x0, x1 = cx - w // 2, cx + w // 2
+        if current_h <= 3:
+            draw.line([x0, cy, x1, cy], fill=1, width=2)
+            return
+
+        y0, y1 = cy - current_h // 2, cy + current_h // 2
+        third = max(3, w // 3)
+        outer = [
+            (x0, cy), (cx - third, y0 + 4), (cx, y0 + 1),
+            (cx + third, y0 + 4), (x1, cy),
+            (cx + third, y1 - 4), (cx, y1 - 1),
+            (cx - third, y1 - 4),
+        ]
+        draw.polygon(outer, fill=1)
+
+        # A slightly lowered inner corner gives dedicated eyes opposing ninja
+        # brows. Same-address mirrored OLEDs deliberately show the same eye.
+        cut = max(2, current_h // 8)
+        if is_left:
+            draw.polygon([(x0, y0), (x1, y0), (x1, y0 + cut),
+                          (x0, y0 + cut * 2)], fill=0)
+        else:
+            draw.polygon([(x0, y0), (x1, y0), (x1, y0 + cut * 2),
+                          (x0, y0 + cut)], fill=0)
+
+        iris_r = max(4, min(current_h // 3, w // 7))
+        max_offset_x = max(0, w // 2 - iris_r - max(5, w // 9))
+        max_offset_y = max(0, current_h // 2 - iris_r - 3)
+        px = cx + int(gaze_x * max_offset_x)
+        py = cy + int(gaze_y * max_offset_y)
+        draw.ellipse([px - iris_r, py - iris_r,
+                      px + iris_r, py + iris_r], fill=0)
+        inner_r = max(2, iris_r - max(2, iris_r // 4))
+        draw.ellipse([px - inner_r, py - inner_r,
+                      px + inner_r, py + inner_r], fill=1)
+
+        pupil_w = max(6, int(iris_r * 1.55))
+        pupil_h = max(2, iris_r // 4)
+        draw.rounded_rectangle(
+            [px - pupil_w // 2, py - pupil_h,
+             px + pupil_w // 2, py + pupil_h],
+            radius=max(1, pupil_h // 2), fill=0)
+
+        if w > 40:
+            # Short dark marks suggest the heavy Sage eye outline without
+            # sacrificing the limited 128x64 display area.
+            mark_y = min(y1 - 2, cy + current_h // 3)
+            if is_left:
+                draw.line([(x0 + 9, mark_y), (x0 + 22, mark_y + 3)],
+                          fill=0, width=2)
+            else:
+                draw.line([(x1 - 9, mark_y), (x1 - 22, mark_y + 3)],
+                          fill=0, width=2)
 
     @staticmethod
     def _draw_nightmare_eye(draw, cx, cy, w, h, gaze_x, gaze_y,
