@@ -3,7 +3,7 @@
 Pan GPIO 12, tilt GPIO 19; OLED bus 1 and optional software bus 3.
 Use --help for hardware-disable, display and mechanical calibration options.
 """
-import argparse
+import argparse # get input formm console
 import math
 import os
 from pathlib import Path
@@ -275,7 +275,9 @@ class FaceTrackingState:
         gx = (self.smooth_cx - width / 2.0) / (width / 2.0)
         gy = (self.smooth_cy - height / 2.0) / (height / 2.0)
         self.gaze_x = -gx if invert_gaze_x else gx
-        self.gaze_y = gy if invert_gaze_y else -gy
+        # Camera and renderer both use Y increasing downward. The OLED driver
+        # already compensates for the panels' upside-down mounting.
+        self.gaze_y = -gy if invert_gaze_y else gy
         if abs(self.gaze_x) <= self.deadband and abs(self.gaze_y) <= self.deadband:
             self.state_name = 'LOCKED'
             if self.lock_start_time is None:
@@ -328,10 +330,10 @@ def parse_args(argv=None):
                         help='Enable vertical camera flip (default: False)')
     parser.add_argument('--pan-pin', type=int, default=12)
     parser.add_argument('--tilt-pin', type=int, default=19)
-    parser.add_argument('--pan-min', type=float, default=40)
-    parser.add_argument('--pan-max', type=float, default=140)
-    parser.add_argument('--tilt-min', type=float, default=65)
-    parser.add_argument('--tilt-max', type=float, default=115)
+    parser.add_argument('--pan-min', type=float, default=10)
+    parser.add_argument('--pan-max', type=float, default=170)
+    parser.add_argument('--tilt-min', type=float, default=45)
+    parser.add_argument('--tilt-max', type=float, default=155)
     parser.add_argument('--invert-tilt', action='store_true', help='Invert vertical tilt servo (Up <-> Down)')
     parser.add_argument('--invert-pan', action='store_true', help='Invert horizontal pan servo (Left <-> Right)')
     parser.add_argument('--invert-gaze-y', action='store_true', help='Invert eye pupil vertical gaze')
@@ -339,9 +341,9 @@ def parse_args(argv=None):
     parser.add_argument('--invert-y', action='store_true', help='Invert both vertical tilt servo and eye gaze')
     parser.add_argument('--pan-center', type=float, default=90)
     parser.add_argument('--tilt-center', type=float, default=90)
-    parser.add_argument('--servo-speed', type=float, default=120, help='Maximum servo speed in degrees/second (fast & smooth)')
-    parser.add_argument('--gain-pan', type=float, default=140.0, help='Pan tracking sensitivity')
-    parser.add_argument('--gain-tilt', type=float, default=110.0, help='Tilt tracking sensitivity')
+    parser.add_argument('--servo-speed', type=float, default=144, help='Maximum servo speed in degrees/second (fast & smooth)')
+    parser.add_argument('--gain-pan', type=float, default=144.0, help='Pan tracking sensitivity')
+    parser.add_argument('--gain-tilt', type=float, default=75.0, help='Tilt tracking sensitivity')
     parser.add_argument('--reverse-pan', action='store_true', help='Reverse horizontal pan servo direction')
     parser.add_argument('--reverse-tilt', action='store_true', help='Reverse vertical tilt servo direction')
     parser.add_argument('--scan-speed', type=float, default=18, help='Pan scan speed in degrees/second')

@@ -184,14 +184,38 @@ class StateTests(unittest.TestCase):
         state.update([face_at(x=200)], 640, 480, 2.1)
         self.assertEqual(state.smooth_cx, 200)
         # Test inverted gaze
-        # By default at 0 deg, face at top (y=100 < 240) makes pupil gaze UP (> 0)
+        # A face above centre has negative Y, matching an upward pupil offset.
         state.update([face_at(x=500, y=100)], 640, 480, 2.2)
         self.assertGreater(state.gaze_x, 0)
-        self.assertGreater(state.gaze_y, 0)
+        self.assertLess(state.gaze_y, 0)
         # Inverted gaze flips it
         state.update([face_at(x=500, y=100)], 640, 480, 2.3, invert_gaze_x=True, invert_gaze_y=True)
         self.assertLess(state.gaze_x, 0)
-        self.assertLess(state.gaze_y, 0)
+        self.assertGreater(state.gaze_y, 0)
+
+    def test_vertical_pupils_follow_face_at_both_tilt_limits(self):
+        frames = []
+        for face_y, limit in ((80, 115), (400, 65)):
+            with self.subTest(face_y=face_y):
+                clock = FakeClock()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    tracker = servos.PanTiltTracker(hardware=False, clock=clock,
+                                                   invert_tilt=True)
+                self.addCleanup(tracker.close)
+                tracker.set_direct(90, limit)
+                state = pi_tracker.FaceTrackingState()
+                state.update([face_at(y=face_y)], 640, 480, 0)
+                clock.advance(0.1)
+                pan, tilt = tracker.track_face(state.smooth_cx, state.smooth_cy)
+                self.assertEqual((pan, tilt), (90, limit))
+                self.assertEqual(state.gaze_x, 0)
+                frames.append(np.asarray(oled_face.RobotEyesRenderer().render_single_eye(
+                    state.mood, state.gaze_x, state.gaze_y)))
+        # The dark pupil occupies more of the upper half when looking up,
+        # and more of the lower half when looking down, even with tilt clamped.
+        up, down = frames
+        self.assertLess(up[:32].sum(), down[:32].sum())
+        self.assertGreater(up[32:].sum(), down[32:].sum())
 
 
 class DisplayTests(unittest.TestCase):
