@@ -334,6 +334,30 @@ class DisplayTests(unittest.TestCase):
         for point in ((3, 32), (64, 3), (124, 32), (64, 60)):
             self.assertEqual(uchiha.getpixel(point), 1)
 
+    def test_uchiha_activation_opens_and_builds_the_pattern(self):
+        renderer = oled_face.RobotEyesRenderer()
+        closed = renderer.render_single_eye('UCHIHA', effect_progress=0.0)
+        forming = renderer.render_single_eye('UCHIHA', effect_progress=0.5)
+        complete = renderer.render_single_eye('UCHIHA', effect_progress=1.0)
+        closed_box = closed.getbbox()
+        self.assertLessEqual(closed_box[3] - closed_box[1], 3)
+        self.assertNotEqual(closed.tobytes(), forming.tobytes())
+        self.assertNotEqual(forming.tobytes(), complete.tobytes())
+        self.assertEqual(complete.tobytes(),
+                         renderer.render_single_eye('UCHIHA').tobytes())
+
+    def test_uchiha_activation_restarts_only_when_mode_is_entered(self):
+        controller, _ = self.controller([], hardware=False)
+        with patch.object(oled_face.time, 'monotonic', side_effect=(10.0, 11.0, 12.0)):
+            controller.set_expression('UCHIHA')
+            started = controller._expression_started_at
+            controller.set_expression('UCHIHA', gaze_x=0.5)
+            self.assertEqual(controller._expression_started_at, started)
+            controller.set_expression('NEUTRAL')
+            self.assertEqual(controller._expression_started_at, 11.0)
+            controller.set_expression('UCHIHA')
+            self.assertEqual(controller._expression_started_at, 12.0)
+
 
 class IntegrationTests(unittest.TestCase):
     def test_model_path_and_shared_controllers(self):

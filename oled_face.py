@@ -27,6 +27,7 @@ except ImportError:
 # shared default makes asymmetric expressions and gaze direction agree in the
 # tracker and in the standalone OLED test.
 DEFAULT_OLED_ROTATION = 180
+UCHIHA_ACTIVATION_SECONDS = 1.25
 
 
 class RobotEyesRenderer:
@@ -35,7 +36,8 @@ class RobotEyesRenderer:
         self.w = width
         self.h = height
 
-    def render_single_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
+    def render_single_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0,
+                             blink_pct=0.0, effect_progress=1.0):
         """Renders TWO eyes side-by-side on a single 128x64 display."""
         image = Image.new("1", (self.w, self.h), 0)
         draw = ImageDraw.Draw(image)
@@ -46,11 +48,14 @@ class RobotEyesRenderer:
         left_cx = (self.w // 2) - (eye_spacing // 2) - (eye_w // 2)
         right_cx = (self.w // 2) + (eye_spacing // 2) + (eye_w // 2)
 
-        self._draw_eye(draw, left_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
-        self._draw_eye(draw, right_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=False)
+        self._draw_eye(draw, left_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y,
+                       blink_pct, is_left=True, effect_progress=effect_progress)
+        self._draw_eye(draw, right_cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y,
+                       blink_pct, is_left=False, effect_progress=effect_progress)
         return image
 
-    def render_single_eye(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
+    def render_single_eye(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0,
+                          blink_pct=0.0, effect_progress=1.0):
         """Renders ONE centered eye spanning the screen with a small border.
         
         Used when dual physical OLEDs share Pin 3 and Pin 5 on address 0x3C without soldering.
@@ -60,10 +65,12 @@ class RobotEyesRenderer:
         draw = ImageDraw.Draw(image)
         eye_w, eye_h = self.w - 4, self.h - 4
         cx, cy = self.w // 2, self.h // 2
-        self._draw_eye(draw, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
+        self._draw_eye(draw, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y,
+                       blink_pct, is_left=True, effect_progress=effect_progress)
         return image
 
-    def render_dual_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0, blink_pct=0.0):
+    def render_dual_screen(self, mood="NEUTRAL", gaze_x=0.0, gaze_y=0.0,
+                           blink_pct=0.0, effect_progress=1.0):
         """Renders dedicated Left and Right eye images for TWO independent 128x64 displays."""
         img_left = Image.new("1", (self.w, self.h), 0)
         img_right = Image.new("1", (self.w, self.h), 0)
@@ -73,14 +80,18 @@ class RobotEyesRenderer:
         eye_w, eye_h = self.w - 4, self.h - 4
         cx, cy = self.w // 2, self.h // 2
 
-        self._draw_eye(draw_l, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=True)
-        self._draw_eye(draw_r, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y, blink_pct, is_left=False)
+        self._draw_eye(draw_l, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y,
+                       blink_pct, is_left=True, effect_progress=effect_progress)
+        self._draw_eye(draw_r, cx, cy, eye_w, eye_h, mood, gaze_x, gaze_y,
+                       blink_pct, is_left=False, effect_progress=effect_progress)
         return img_left, img_right
 
-    def _draw_eye(self, draw, cx, cy, w, h, mood, gaze_x, gaze_y, blink_pct, is_left):
+    def _draw_eye(self, draw, cx, cy, w, h, mood, gaze_x, gaze_y,
+                  blink_pct, is_left, effect_progress=1.0):
         if mood == "UCHIHA":
             self._draw_uchiha_eye(
-                draw, cx, cy, w, h, gaze_x, gaze_y, blink_pct, is_left)
+                draw, cx, cy, w, h, gaze_x, gaze_y, blink_pct, is_left,
+                effect_progress)
             return
 
         if mood == "NARUTO":
@@ -141,9 +152,12 @@ class RobotEyesRenderer:
 
     @staticmethod
     def _draw_uchiha_eye(draw, cx, cy, w, h, gaze_x, gaze_y,
-                         blink_pct, is_left):
+                         blink_pct, is_left, effect_progress=1.0):
         """Fill the normal eye body and replace only its pupil with Sharingan."""
-        current_h = int(h * (1.0 - blink_pct))
+        progress = max(0.0, min(1.0, effect_progress))
+        opening = min(1.0, progress / 0.30)
+        activation_blink = 1.0 - opening
+        current_h = int(h * (1.0 - max(blink_pct, activation_blink)))
         x0, x1 = cx - w // 2, cx + w // 2
         if current_h <= 3:
             draw.line([x0, cy, x1, cy], fill=1, width=2)
@@ -152,10 +166,12 @@ class RobotEyesRenderer:
         y0, y1 = cy - current_h // 2, cy + current_h // 2
         rx = 8 if w > 40 else 6
         draw.rounded_rectangle([x0, y0, x1, y1], radius=rx, fill=1, outline=1)
-        if blink_pct >= 0.6:
+        pattern_progress = max(0.0, min(1.0, (progress - 0.16) / 0.64))
+        if blink_pct >= 0.6 or pattern_progress <= 0.0:
             return
 
-        iris_r = max(5, min(current_h // 2 - 3, w // 5 + 1))
+        final_iris_r = max(5, min(current_h // 2 - 3, w // 5 + 1))
+        iris_r = max(2, int(final_iris_r * pattern_progress))
         max_offset_x = max(0, w // 2 - iris_r - 4)
         max_offset_y = max(0, current_h // 2 - iris_r - 3)
         px = cx + int(gaze_x * max_offset_x)
@@ -166,16 +182,17 @@ class RobotEyesRenderer:
         draw.ellipse([px - iris_r, py - iris_r,
                       px + iris_r, py + iris_r], outline=0,
                      width=max(2, iris_r // 8))
-        pupil_r = max(2, iris_r // 5)
+        pupil_r = max(1, iris_r // 5)
         draw.ellipse([px - pupil_r, py - pupil_r,
                       px + pupil_r, py + pupil_r], fill=0)
 
         # Three tomoe placed around the pupil. Each dot has a short tangential
         # tail so it remains recognizable on a 128x64 one-bit display.
-        orbit = max(pupil_r + 3, int(iris_r * 0.60))
+        orbit = max(pupil_r + 2, int(iris_r * 0.60))
         tomoe_r = max(1, iris_r // 7)
+        rotation = 360.0 * (1.0 - pattern_progress) ** 2
         for angle in (-90, 30, 150):
-            radians = angle * 3.141592653589793 / 180.0
+            radians = math.radians(angle + rotation)
             tx = px + int(orbit * math.cos(radians))
             ty = py + int(orbit * math.sin(radians))
             draw.ellipse([tx - tomoe_r, ty - tomoe_r,
@@ -331,6 +348,7 @@ class OLEDDisplayController:
         self.dev1 = self.dev2 = None
         self.dual_screen = False
         self.current_mood = 'NEUTRAL'
+        self._expression_started_at = time.monotonic()
         self.gaze_x = self.gaze_y = 0.0
         self.running = False
         self.thread = None
@@ -377,6 +395,8 @@ class OLEDDisplayController:
 
     def set_expression(self, mood='NEUTRAL', gaze_x=0.0, gaze_y=0.0):
         with self._expression_lock:
+            if mood != self.current_mood:
+                self._expression_started_at = time.monotonic()
             self.current_mood = mood
             self.gaze_x = max(-1.0, min(1.0, gaze_x))
             self.gaze_y = max(-1.0, min(1.0, gaze_y))
@@ -402,7 +422,12 @@ class OLEDDisplayController:
 
     def _display_frame(self, blink_pct):
         with self._expression_lock:
-            expression = self.current_mood, self.gaze_x, self.gaze_y, blink_pct
+            effect_progress = 1.0
+            if self.current_mood == 'UCHIHA':
+                elapsed = time.monotonic() - self._expression_started_at
+                effect_progress = min(1.0, elapsed / UCHIHA_ACTIVATION_SECONDS)
+            expression = (self.current_mood, self.gaze_x, self.gaze_y,
+                          blink_pct, effect_progress)
         devices = [device for device in (self.dev1, self.dev2) if device is not None]
         if len(devices) == 2:
             frames = self.renderer.render_dual_screen(*expression)
