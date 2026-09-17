@@ -77,6 +77,11 @@ class RobotEyesRenderer:
         return img_left, img_right
 
     def _draw_eye(self, draw, cx, cy, w, h, mood, gaze_x, gaze_y, blink_pct, is_left):
+        if mood == "NIGHTMARE":
+            self._draw_nightmare_eye(
+                draw, cx, cy, w, h, gaze_x, gaze_y, blink_pct, is_left)
+            return
+
         if mood == "HAPPY":
             line_w = 4 if w > 40 else 3
             bbox = [cx - w // 2, cy - h // 3, cx + w // 2, cy + h // 3]
@@ -122,6 +127,57 @@ class RobotEyesRenderer:
             dot_x = px - pupil_w // 4
             dot_y = py - pupil_h // 4
             draw.ellipse([dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r], fill=1)
+
+    @staticmethod
+    def _draw_nightmare_eye(draw, cx, cy, w, h, gaze_x, gaze_y,
+                            blink_pct, is_left):
+        """Draw a pointed monster eye with a moving vertical slit pupil."""
+        current_h = int(h * (1.0 - blink_pct))
+        x0, x1 = cx - w // 2, cx + w // 2
+        if current_h <= 3:
+            draw.line([x0, cy, x1, cy], fill=1, width=2)
+            return
+
+        y0, y1 = cy - current_h // 2, cy + current_h // 2
+        quarter = max(2, w // 4)
+        outer = [
+            (x0, cy), (cx - quarter, y0 + 2), (cx, y0),
+            (cx + quarter, y0 + 2), (x1, cy),
+            (cx + quarter, y1 - 2), (cx, y1),
+            (cx - quarter, y1 - 2),
+        ]
+        draw.polygon(outer, fill=1)
+
+        # Cut a hard diagonal brow into the bright eye. Dedicated left/right
+        # displays get mirrored brows; same-bus mirrored displays stay synced.
+        brow_depth = max(4, current_h // 4)
+        if is_left:
+            brow = [(x0, y0), (x1, y0), (x1, y0 + 2),
+                    (x0, y0 + brow_depth)]
+        else:
+            brow = [(x0, y0), (x1, y0), (x1, y0 + brow_depth),
+                    (x0, y0 + 2)]
+        draw.polygon(brow, fill=0)
+
+        pupil_w = max(3, w // 10)
+        pupil_h = max(8, int(current_h * 0.64))
+        max_offset_x = max(0, (w - pupil_w) // 2 - max(5, w // 8))
+        max_offset_y = max(0, (current_h - pupil_h) // 2 - 2)
+        px = cx + int(gaze_x * max_offset_x)
+        py = cy + int(gaze_y * max_offset_y)
+        slit = [(px, py - pupil_h // 2),
+                (px + pupil_w // 2, py),
+                (px, py + pupil_h // 2),
+                (px - pupil_w // 2, py)]
+        draw.polygon(slit, fill=0)
+
+        draw.point((px - 1, py - pupil_h // 4), fill=1)
+        if w > 40:
+            crack = max(5, w // 10)
+            draw.line([(x0 + 3, cy), (x0 + crack, cy - 5),
+                       (x0 + crack + 5, cy - 3)], fill=0, width=2)
+            draw.line([(x1 - 3, cy + 2), (x1 - crack, cy + 7),
+                       (x1 - crack - 5, cy + 5)], fill=0, width=2)
 
 
 def parse_rotation(val):

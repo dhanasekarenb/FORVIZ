@@ -211,7 +211,7 @@ def draw_hud(frame, primary_face, pan_deg, tilt_deg, state_name, fps, latency_ms
     if primary_face:
         x, y, bw, bh = primary_face["box"]
         tcx, tcy = x + bw // 2, y + bh // 2
-        color = (0, 255, 0) if state_name == "LOCKED" else (0, 220, 255)
+        color = (0, 255, 0) if state_name == "LOCKED" else (127, 0, 255)
         cv2.rectangle(frame, (x, y), (x + bw, y + bh), color, 2)
         cv2.circle(frame, (tcx, tcy), 4, (0, 0, 255), -1)
         cv2.arrowedLine(frame, (cx, cy), (tcx, tcy), (0, 255, 255), 2, tipLength=0.2)
@@ -312,6 +312,8 @@ def parse_args(argv=None):
                         help='Rotate screen 1 specifically (0, 90, 180, or 270 degrees)')
     parser.add_argument('--oled2-rotate', type=int, default=None, choices=[0, 90, 180, 270],
                         help='Rotate screen 2 specifically (0, 90, 180, or 270 degrees)')
+    parser.add_argument('--nightmare', action='store_true',
+                        help='Keep the OLEDs in the nightmare eye expression')
     display = parser.add_mutually_exclusive_group()
     display.add_argument('--headless', action='store_true', help='Disable OpenCV preview')
     display.add_argument('--preview', action='store_true', help='Request OpenCV preview on a desktop')
@@ -442,7 +444,8 @@ def main(argv=None):
             else:
                 pan, tilt = tracker.step_scan()
             if face_display:
-                face_display.set_expression(state.mood, state.gaze_x, state.gaze_y)
+                mood = 'NIGHTMARE' if args.nightmare else state.mood
+                face_display.set_expression(mood, state.gaze_x, state.gaze_y)
             thermal_status = thermal.report(now)
             if thermal_status:
                 print(thermal_status)

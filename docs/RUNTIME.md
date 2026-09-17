@@ -183,6 +183,24 @@ Stationary servos keep PWM enabled by default. This lets the motor hold the head
 
 Press Ctrl+C in any runtime mode, or Q/Escape in the desktop preview, to stop. Shutdown releases PWM at the current position, stops OLED animation, and releases the camera. It does not command an abrupt return to center. Support the head when releasing torque. Disconnect power before adjusting wiring or mechanical retention.
 
+### Automatic startup and development
+
+From the project directory on the Raspberry Pi, install the boot service once:
+
+```bash
+bash robot_service.sh install
+```
+
+The service runs the tracker with `--mirror-eye --headless --gain-tilt 60`. It points directly at this project directory. Stop it before opening the camera or GPIO from a manual test, then restart it after editing:
+
+```bash
+bash robot_service.sh stop
+python3 pi_tracker.py --mirror-eye --headless --gain-tilt 60
+bash robot_service.sh start
+```
+
+Other controls are `restart`, `status`, `logs`, `disable`, `enable`, and `remove`. A normal Raspberry Pi OS shutdown stops the service cleanly. Removing electrical power without `sudo poweroff` bypasses software cleanup and risks microSD corruption.
+
 ## Troubleshooting
 
 | Symptom | Check |

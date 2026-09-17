@@ -130,6 +130,28 @@ Default limits are **pan 40–140°** and **tilt 65–115°**, with both centers
 
 The servos retain PWM while stationary by default so the head keeps holding torque. Optional `--idle-detach-after` releases that torque; it does not disconnect electrical power or guarantee a cool servo. Shutdown releases PWM without automatically moving the head back to center.
 
+## Start automatically when the Pi boots
+
+Run this once from the project directory on the Raspberry Pi:
+
+```bash
+bash robot_service.sh install
+```
+
+The installed `systemd` service starts `pi_tracker.py` in headless mirrored-eye mode after boot. It uses the current project directory, so later code changes take effect after restarting the service; the service does not copy the Python files.
+
+When connecting a monitor to edit or test the code, stop the automatic instance first so two trackers do not compete for the camera and GPIO:
+
+```bash
+bash robot_service.sh stop
+python3 pi_tracker.py --mirror-eye --headless --gain-tilt 60
+bash robot_service.sh start
+```
+
+Use `bash robot_service.sh restart` after saving changes, `bash robot_service.sh status` to inspect its state, and `bash robot_service.sh logs` to follow runtime output. Use `disable` to keep it off across reboots and `enable` to restore automatic startup.
+
+Shut down Raspberry Pi OS with `sudo poweroff` before disconnecting its power. During an operating-system shutdown, the service sends the tracker an interrupt so it releases servo PWM and closes the camera and OLED devices. Cutting electrical power cannot run that cleanup and may corrupt the microSD card.
+
 This is face detection and tracking. The heart expression in the OLED demonstration is a manually selected animation, with no identity recognition attached to it.
 
 ## Useful commands
@@ -141,6 +163,7 @@ This is face detection and tracking. The heart expression in the OLED demonstrat
 | Use the installed upside-down OLEDs (default) | `python3 pi_tracker.py` |
 | Override both displays to upright mounting | `python3 pi_tracker.py --oled-rotate 0` |
 | Rotate Screen 1 and Screen 2 independently | `python3 pi_tracker.py --oled1-rotate 180 --oled2-rotate 0` |
+| Keep the moving pupils in nightmare eyes | `python3 pi_tracker.py --mirror-eye --nightmare` |
 | Force a desktop camera preview | `python3 pi_tracker.py --preview` |
 | Headless operation | `python3 pi_tracker.py --headless` |
 | All runtime options | `python3 pi_tracker.py --help` |
