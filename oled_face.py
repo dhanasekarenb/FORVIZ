@@ -393,9 +393,10 @@ class OLEDDisplayController:
         if dual_screen is True and not self.dual_screen:
             print('[OLED] Two screens requested; using the displays detected.')
 
-    def set_expression(self, mood='NEUTRAL', gaze_x=0.0, gaze_y=0.0):
+    def set_expression(self, mood='NEUTRAL', gaze_x=0.0, gaze_y=0.0,
+                       restart_effect=False):
         with self._expression_lock:
-            if mood != self.current_mood:
+            if mood != self.current_mood or restart_effect:
                 self._expression_started_at = time.monotonic()
             self.current_mood = mood
             self.gaze_x = max(-1.0, min(1.0, gaze_x))

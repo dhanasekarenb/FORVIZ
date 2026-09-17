@@ -239,13 +239,17 @@ class FaceTrackingState:
         self.smooth_cx = self.smooth_cy = None
         self.state_name, self.mood = 'SCANNING', 'NEUTRAL'
         self.gaze_x = self.gaze_y = 0.0
+        self.just_settled = False
+        self._settled = False
 
     def update(self, faces, width, height, now, invert_gaze_x=False, invert_gaze_y=False):
         dt = 1.0 / 30.0 if self.last_update is None else max(0.0, now - self.last_update)
         self.last_update = now
         self.mood = 'NEUTRAL'
+        self.just_settled = False
         if not faces:
             self.lock_start_time = None
+            self._settled = False
             if self.last_seen is not None and now - self.last_seen < self.face_loss_sec:
                 self.state_name = 'HOLDING'
             else:
@@ -284,9 +288,13 @@ class FaceTrackingState:
                 self.lock_start_time = now
             if now - self.lock_start_time >= 1.0:
                 self.mood = 'HAPPY'
+                if not self._settled:
+                    self.just_settled = True
+                self._settled = True
         else:
             self.state_name = 'TRACKING'
             self.lock_start_time = None
+            self._settled = False
         return primary_face
 
 
@@ -452,7 +460,9 @@ def main(argv=None):
                 mood = ('NIGHTMARE' if args.nightmare else
                         'NARUTO' if args.naruto else
                         'UCHIHA' if args.uchiha else state.mood)
-                face_display.set_expression(mood, state.gaze_x, state.gaze_y)
+                face_display.set_expression(
+                    mood, state.gaze_x, state.gaze_y,
+                    restart_effect=args.uchiha and state.just_settled)
             thermal_status = thermal.report(now)
             if thermal_status:
                 print(thermal_status)

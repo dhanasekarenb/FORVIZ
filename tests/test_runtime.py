@@ -162,11 +162,15 @@ class StateTests(unittest.TestCase):
         state.update([face_at()], 640, 480, 0)
         state.update([face_at()], 640, 480, 1)
         self.assertEqual(state.mood, 'HAPPY')
+        self.assertTrue(state.just_settled)
+        state.update([face_at()], 640, 480, 1.1)
+        self.assertFalse(state.just_settled)
         state.update([], 640, 480, 1.1)
         state.update([face_at()], 640, 480, 1.2)
         self.assertEqual(state.mood, 'NEUTRAL')
         state.update([face_at()], 640, 480, 2.21)
         self.assertEqual(state.mood, 'HAPPY')
+        self.assertTrue(state.just_settled)
 
     def test_lock_and_servo_deadbands_match(self):
         state = pi_tracker.FaceTrackingState()
@@ -348,15 +352,18 @@ class DisplayTests(unittest.TestCase):
 
     def test_uchiha_activation_restarts_only_when_mode_is_entered(self):
         controller, _ = self.controller([], hardware=False)
-        with patch.object(oled_face.time, 'monotonic', side_effect=(10.0, 11.0, 12.0)):
+        with patch.object(oled_face.time, 'monotonic',
+                          side_effect=(10.0, 11.0, 12.0, 13.0)):
             controller.set_expression('UCHIHA')
             started = controller._expression_started_at
             controller.set_expression('UCHIHA', gaze_x=0.5)
             self.assertEqual(controller._expression_started_at, started)
-            controller.set_expression('NEUTRAL')
+            controller.set_expression('UCHIHA', restart_effect=True)
             self.assertEqual(controller._expression_started_at, 11.0)
-            controller.set_expression('UCHIHA')
+            controller.set_expression('NEUTRAL')
             self.assertEqual(controller._expression_started_at, 12.0)
+            controller.set_expression('UCHIHA')
+            self.assertEqual(controller._expression_started_at, 13.0)
 
 
 class IntegrationTests(unittest.TestCase):
