@@ -610,7 +610,8 @@ class GroqVoiceAssistant:
                 data=bytes(body),
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": f"multipart/form-data; boundary={boundary}"
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FORVIZ/1.0"
                 }
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
@@ -656,7 +657,8 @@ class GroqVoiceAssistant:
                 data=payload,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FORVIZ/1.0"
                 }
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
