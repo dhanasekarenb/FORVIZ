@@ -1,6 +1,12 @@
-﻿opencv-python>=4.8.0
+opencv-python>=4.8.0
 numpy>=1.24.0
 Pillow>=9.5.0
 luma.oled>=3.13.0
 gpiozero>=2.0
 pigpio>=1.78
+groq>=0.11.0
+gTTS>=2.3.0
+edge-tts>=6.1.0
+pygame>=2.5.0
+sounddevice>=0.4.6
+
