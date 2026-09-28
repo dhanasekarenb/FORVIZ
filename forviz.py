@@ -344,7 +344,8 @@ class GroqVoiceAssistant:
     )
 
     def __init__(self, api_key=None, groq_model="llama-3.3-70b-versatile",
-                 whisper_model="whisper-large-v3-turbo", voice_callback=None):
+                 whisper_model="whisper-large-v3-turbo", voice_callback=None,
+                 audio_device=None):
         self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         if not self.api_key:
             self.api_key = self._find_key_in_dotenv()
@@ -352,6 +353,7 @@ class GroqVoiceAssistant:
         self.groq_model = groq_model
         self.whisper_model = whisper_model
         self.voice_callback = voice_callback  # Callback to set OLED expression & robot state
+        self.audio_device = audio_device
         self.running = False
         self.thread = None
         self._stop_event = threading.Event()
@@ -365,6 +367,9 @@ class GroqVoiceAssistant:
             except Exception as e:
                 print(f"[VOICE WARNING] Groq SDK init failed: {e}")
 
+        # Ensure volume is unmuted on Raspberry Pi
+        self._unmute_system_audio()
+
         # Pygame mixer initialization for audio playback
         self.pygame_audio = False
         if PYGAME_AVAILABLE:
@@ -376,6 +381,18 @@ class GroqVoiceAssistant:
 
         if not self.api_key:
             print("[VOICE NOTE] GROQ_API_KEY not set. Set GROQ_API_KEY in environment or .env file to enable voice.")
+
+    @staticmethod
+    def _unmute_system_audio():
+        """Unmute ALSA headphone channels and raise volume on Linux/Pi."""
+        if sys.platform.startswith("linux") and shutil.which("amixer"):
+            for card in [0, 1, 2, "Headphones"]:
+                for control in ["Master", "Headphone", "PCM", "Speaker"]:
+                    try:
+                        subprocess.run(["amixer", "-c", str(card), "set", control, "100%", "unmute"],
+                                       capture_output=True, timeout=1)
+                    except Exception:
+                        pass
 
     @staticmethod
     def _find_key_in_dotenv():
@@ -714,11 +731,25 @@ class GroqVoiceAssistant:
                 pass
 
         # Try system players on Linux (mpv, mpg123, ffplay, aplay)
-        for player in ["mpg123", "mpv", "ffplay"]:
+        for player in ["mpg123", "mpv", "ffplay", "aplay"]:
             if shutil.which(player):
                 try:
+                    dev_args = []
+                    if self.audio_device:
+                        if player == "aplay":
+                            dev_args = ["-D", self.audio_device]
+                        elif player == "mpg123":
+                            dev_args = ["-a", self.audio_device]
+                        elif player == "mpv":
+                            dev_args = [f"--audio-device=alsa/{self.audio_device}"]
+
+                    if player == "aplay":
+                        if file_path.endswith(".wav"):
+                            subprocess.run(["aplay", "-q"] + dev_args + [file_path], timeout=15, check=True)
+                            return
+                        continue
                     extra = ["-nodisp", "-autoexit"] if player == "ffplay" else (["--no-video"] if player == "mpv" else ["-q"])
-                    subprocess.run([player] + extra + [file_path], timeout=15)
+                    subprocess.run([player] + extra + dev_args + [file_path], timeout=15)
                     return
                 except Exception:
                     pass
@@ -832,6 +863,8 @@ def parse_args(argv=None):
                         help='Groq LLM model (default: llama-3.3-70b-versatile)')
     parser.add_argument('--whisper-model', type=str, default="whisper-large-v3-turbo",
                         help='Groq Whisper model (default: whisper-large-v3-turbo)')
+    parser.add_argument('--audio-device', type=str, default=None,
+                        help='ALSA playback device (e.g. plughw:1,0 or Headphones)')
 
     # Vision & Camera Parameters
     parser.add_argument('--model', default=YUNET_MODEL_PATH, help='YuNet ONNX model path')
@@ -948,7 +981,8 @@ def main(argv=None):
                 api_key=args.groq_key,
                 groq_model=args.groq_model,
                 whisper_model=args.whisper_model,
-                voice_callback=on_voice_event
+                voice_callback=on_voice_event,
+                audio_device=args.audio_device
             )
             voice_bot.start()
             if args.voice_text:
